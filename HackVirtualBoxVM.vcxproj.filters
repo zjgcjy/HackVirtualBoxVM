@@ -27,5 +27,8 @@
     <ClInclude Include="driver.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="mm.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

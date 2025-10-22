@@ -6,22 +6,10 @@ extern "C"
 #endif // __cplusplus
 
 #include <fltKernel.h>
-#include <minwindef.h>
-#include <windef.h>
-#include <ntstrsafe.h>
-#include <ntimage.h>
-#include <intrin.h>
-#include <ntifs.h>
-	//#include <ntddk.h>
-	//#include <ntifs.h>
-	//#include <wdm.h>
-	//#include <winnt.h>
 
 #ifdef __cplusplus
 }
 #endif // __cplusplus
-
-#include "driver.hpp"
 
 
 VOID NTAPI MyDbgPrint(
@@ -51,11 +39,15 @@ typedef struct _DEVICE_EXTENSION
 } DEVICE_EXTERNSION, * PDEVICE_EXTENSION;
 
 
+UNICODE_STRING g_DeviceName = RTL_CONSTANT_STRING(L"\\Device\\HackVMDev0");
+UNICODE_STRING g_SymLinkName = RTL_CONSTANT_STRING(L"\\??\\HackVMDev0");
+
+
 #define IOCTL_BUFFERED_DEMO \
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x700, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 
-UNICODE_STRING g_vbox_device = RTL_CONSTANT_STRING(L"\\Device\\VBoxDrv");
+UNICODE_STRING g_vboxDeviceName = RTL_CONSTANT_STRING(L"\\Device\\VBoxDrv");
 PFILE_OBJECT g_vboxFileObject = NULL;
 PDEVICE_OBJECT g_vboxDeviceObject = NULL;
 
@@ -68,49 +60,7 @@ const int g_offset_GstCtx_VMCPU = 0x3a000;	// CPUMGetGuestEAX
 const int g_offset_cr3_CPUMCTX = 0x170;	// CPUMGetGuestCR3
 const int g_offset_eptp_VMCPU = 0x311d8;	// PGMGetHyperCR3	vmxHCExportGuestCR3AndCR4
 
-VOID NtDriverUnload(
-	_In_ PDRIVER_OBJECT DriverObject
-)
-{
-	MyDbgPrint("Start NtDriverUnload\n");
-	// delete device and symlink
-	PDEVICE_OBJECT DeviceObject = DriverObject->DeviceObject;
-	while (DeviceObject != NULL)
-	{
-		PDEVICE_EXTENSION DeviceExtension = (PDEVICE_EXTENSION)DeviceObject->DeviceExtension;
-		IoDeleteSymbolicLink(&DeviceExtension->SymLinkName);
-		// delete current, move to next
-		DeviceObject = DeviceObject->NextDevice;
-		IoDeleteDevice(DeviceExtension->DeviceObject);
-	}
-	MyDbgPrint("End NtDriverUnload\n");
-}
 
-NTSTATUS IrpCreate(
-	_In_ PDEVICE_OBJECT DeviceObject,
-	_Inout_ PIRP Irp)
-{
-	UNREFERENCED_PARAMETER(DeviceObject);
-	UNREFERENCED_PARAMETER(Irp);
-	NTSTATUS Status = STATUS_SUCCESS;
-	Irp->IoStatus.Information = 0;
-	Irp->IoStatus.Status = Status;
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-	return Status;
-}
-
-NTSTATUS IrpClose(
-	_In_ PDEVICE_OBJECT DeviceObject,
-	_Inout_ PIRP Irp)
-{
-	UNREFERENCED_PARAMETER(DeviceObject);
-	UNREFERENCED_PARAMETER(Irp);
-	NTSTATUS Status = STATUS_SUCCESS;
-	Irp->IoStatus.Information = 0;
-	Irp->IoStatus.Status = Status;
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-	return Status;
-}
 
 NTSTATUS EnumSessionList(
 	IN OUT PVOID SystemBuffer,
@@ -130,7 +80,7 @@ NTSTATUS EnumSessionList(
 	}*/
 	//DbgPrintEx(DPFLTR_SYSTEM_ID, 0, "InputLength: %d, OutputLength: %d\n", InputLength, OutputLength);
 	
-	NTSTATUS Status = IoGetDeviceObjectPointer(&g_vbox_device, FILE_ALL_ACCESS, &g_vboxFileObject, &g_vboxDeviceObject);
+	NTSTATUS Status = IoGetDeviceObjectPointer(&g_vboxDeviceName, FILE_ALL_ACCESS, &g_vboxFileObject, &g_vboxDeviceObject);
 	if (!NT_SUCCESS(Status))
 	{
 		ReturnLength = 0;
@@ -156,9 +106,14 @@ NTSTATUS EnumSessionList(
 		for (size_t cpuid = 0; cpuid < CpuNumber; cpuid++)
 		{
 			PVOID GvmCPU = (PVOID)((UCHAR*)pSessionGVM + g_offset_aCpus_GVM + cpuid * g_size_GVMCPU);
-			MyDbgPrint("guest cpu[%d] GvmCPU=%llx\n", cpuid, GvmCPU);
+			// MyDbgPrint("guest cpu[%d] GvmCPU=%llx\n", cpuid, GvmCPU);
 			UINT64 cr3 = *(UINT64*)((UCHAR*)GvmCPU + g_offset_GstCtx_VMCPU + g_offset_cr3_CPUMCTX);
-			UINT64 eptp = *(UINT64*)((UCHAR*)GvmCPU + g_offset_eptp_VMCPU);
+			PVOID pShwPageCR3R0 = *(PVOID*)((UCHAR*)GvmCPU + g_offset_eptp_VMCPU);
+			if (!pShwPageCR3R0)
+			{
+				continue;
+			}
+			UINT64 eptp = *(UINT64*)pShwPageCR3R0;
 			MyDbgPrint("guest cpu[%d] cr3=%llx eptp=%llx\n", cpuid, cr3, eptp);
 		}
 
@@ -178,73 +133,5 @@ NTSTATUS EnumSessionList(
 	ReturnLength = 0;
 	return Status;
 }
-
-NTSTATUS NtDriverIRP(
-	_In_ PDEVICE_OBJECT DeviceObject,
-	_Inout_ PIRP Irp
-)
-{
-	UNREFERENCED_PARAMETER(DeviceObject);
-	UNREFERENCED_PARAMETER(Irp);
-	MyDbgPrint("Start NtDriverIRP\n");
-
-	PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
-	ULONG InputLength = Stack->Parameters.DeviceIoControl.InputBufferLength;
-	ULONG OutputLength = Stack->Parameters.DeviceIoControl.OutputBufferLength;
-	PUCHAR Buffer = (PUCHAR)Irp->AssociatedIrp.SystemBuffer;
-
-	NTSTATUS Status = STATUS_UNSUCCESSFUL;
-	ULONG ReturnLength = 0;
-	switch (Stack->Parameters.DeviceIoControl.IoControlCode)
-	{
-		case IOCTL_BUFFERED_DEMO:
-		{
-			Status = EnumSessionList(Buffer, InputLength, OutputLength, &ReturnLength);
-			break;
-		}
-		default:
-		{
-			Status = STATUS_INVALID_DEVICE_REQUEST;
-			ReturnLength = 0;
-			break;
-		}
-	}
-
-	Irp->IoStatus.Status = Status;
-	Irp->IoStatus.Information = ReturnLength;
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-	MyDbgPrint("End NtDriverIRP\n");
-	return Status;
-}
-
-NTSTATUS NtDriverCreateDevice(
-	_In_ PDRIVER_OBJECT DriverObject
-)
-{
-	UNICODE_STRING DeviceName = RTL_CONSTANT_STRING(L"\\Device\\HackVMDev0");
-	// create device object by IoCreateDevice
-	PDEVICE_OBJECT Deviceobject;
-	NTSTATUS status = IoCreateDevice(DriverObject, sizeof(_DEVICE_EXTENSION), &DeviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &Deviceobject);
-	if (!NT_SUCCESS(status))
-	{
-		return status;
-	}
-	Deviceobject->Flags |= DO_BUFFERED_IO;
-
-	UNICODE_STRING SymLinkName = RTL_CONSTANT_STRING(L"\\??\\HackVMDev0");
-	status = IoCreateSymbolicLink(&SymLinkName, &DeviceName);
-	if (!NT_SUCCESS(status))
-	{
-		IoDeleteDevice(Deviceobject);
-		return status;
-	}
-	// init device extension
-	PDEVICE_EXTENSION DeviceExtension = (PDEVICE_EXTENSION)Deviceobject->DeviceExtension;
-	DeviceExtension->DeviceObject = Deviceobject;
-	DeviceExtension->DeviceName = DeviceName;
-	DeviceExtension->SymLinkName = SymLinkName;
-	return status;
-}
-
 
 
