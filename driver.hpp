@@ -55,14 +55,18 @@ typedef struct _DEVICE_EXTENSION
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x700, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 
-const int g_offset_apSessionHashTab = 0x928;
 UNICODE_STRING g_vbox_device = RTL_CONSTANT_STRING(L"\\Device\\VBoxDrv");
 PFILE_OBJECT g_vboxFileObject = NULL;
 PDEVICE_OBJECT g_vboxDeviceObject = NULL;
+
+const int g_offset_apSessionHashTab_SUPDRVDEVEXT = 0x928;	// supdrvSessionHashTabLookup
 const int g_offset_pSessionGVM_SUPDRVSESSION = 0x38;
-const int g_offset_cCpus_GVM = 0x134020;
-const int g_offset_aCpus_GVM = 0x150000;
+const int g_offset_cCpus_GVM = 0x134020;	// GVMMR0RegisterVCpu
+const int g_offset_aCpus_GVM = 0x150000;	// GMMR0AllocateLargePage
 const int g_size_GVMCPU = 0x64000;
+const int g_offset_GstCtx_VMCPU = 0x3a000;	// CPUMGetGuestEAX
+const int g_offset_cr3_CPUMCTX = 0x170;	// CPUMGetGuestCR3
+const int g_offset_eptp_VMCPU = 0x311d8;	// PGMGetHyperCR3	vmxHCExportGuestCR3AndCR4
 
 VOID NtDriverUnload(
 	_In_ PDRIVER_OBJECT DriverObject
@@ -133,7 +137,7 @@ NTSTATUS EnumSessionList(
 		return Status;
 	}
 
-	PVOID* SessionHashTab = (PVOID*)((UCHAR*)g_vboxDeviceObject->DeviceExtension + g_offset_apSessionHashTab);
+	PVOID* SessionHashTab = (PVOID*)((UCHAR*)g_vboxDeviceObject->DeviceExtension + g_offset_apSessionHashTab_SUPDRVDEVEXT);
 	for (size_t i = 0; i < 0x1FFF; i++)
 	{
 		PVOID apSessionHashTab = SessionHashTab[i];
@@ -141,13 +145,22 @@ NTSTATUS EnumSessionList(
 		{
 			continue;
 		}
-		MyDbgPrint("Find Session pid=[%d, %d, %d]\n", i, i+0x1fff, i+0x1fff+0x1fff);
+		MyDbgPrint("Find VM Session, VM pid maybe in [%d, %d, %d]\n", i, i+0x1fff, i+0x1fff+0x1fff);
 		PVOID pSessionGVM = *(PVOID*)((UCHAR*)apSessionHashTab + g_offset_pSessionGVM_SUPDRVSESSION);
 		if (!pSessionGVM)
 		{
 			continue;
 		}
-		MyDbgPrint("pSessionGVM = %llx\n", pSessionGVM);
+		DWORD CpuNumber = *(DWORD*)((UCHAR*)pSessionGVM + g_offset_cCpus_GVM);
+		MyDbgPrint("pSessionGVM=%llx, CpuNumber=%d\n", pSessionGVM, CpuNumber);
+		for (size_t cpuid = 0; cpuid < CpuNumber; cpuid++)
+		{
+			PVOID GvmCPU = (PVOID)((UCHAR*)pSessionGVM + g_offset_aCpus_GVM + cpuid * g_size_GVMCPU);
+			MyDbgPrint("guest cpu[%d] GvmCPU=%llx\n", cpuid, GvmCPU);
+			UINT64 cr3 = *(UINT64*)((UCHAR*)GvmCPU + g_offset_GstCtx_VMCPU + g_offset_cr3_CPUMCTX);
+			UINT64 eptp = *(UINT64*)((UCHAR*)GvmCPU + g_offset_eptp_VMCPU);
+			MyDbgPrint("guest cpu[%d] cr3=%llx eptp=%llx\n", cpuid, cr3, eptp);
+		}
 
 
 
