@@ -1,5 +1,3 @@
-
-
 #ifdef __cplusplus
 extern "C"
 {
@@ -62,13 +60,18 @@ NTSTATUS IrpIoctl(
 	PUCHAR Buffer = (PUCHAR)Irp->AssociatedIrp.SystemBuffer;
 
 	NTSTATUS Status = STATUS_UNSUCCESSFUL;
-	ULONG ReturnLength = 0;
+	ULONG_PTR ReturnLength = 0;
 
 	switch (Stack->Parameters.DeviceIoControl.IoControlCode)
 	{
-		case IOCTL_BUFFERED_DEMO:
+		case IOCTL_ENUM_SESSION_LIST:
 		{
-			Status = EnumSessionList(Buffer, InputLength, OutputLength, &ReturnLength);
+			Status = GetVMCpuInfo(Buffer, InputLength, OutputLength, ReturnLength);
+			break;
+		}
+		case IOCTL_READ_PHYSICAL_MEMORY:
+		{
+			Status = GetPhysicalMem(Buffer, InputLength, OutputLength, ReturnLength);
 			break;
 		}
 		default:
@@ -131,8 +134,8 @@ NTSTATUS NtDriverCreateDevice(
 }
 
 EXTERN_C NTSTATUS DriverEntry(
-	IN PDRIVER_OBJECT DriverObject,
-	IN PUNICODE_STRING RegistyPath
+	_In_ PDRIVER_OBJECT DriverObject,
+	_In_ PUNICODE_STRING RegistyPath
 )
 {
 	UNREFERENCED_PARAMETER(DriverObject);
@@ -145,6 +148,7 @@ EXTERN_C NTSTATUS DriverEntry(
 	DriverObject->DriverUnload = NtDriverUnload;
 
 	NTSTATUS status = NtDriverCreateDevice(DriverObject);
+
 
 	MyDbgPrint("End DriverEntry\n");
 	return status;

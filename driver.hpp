@@ -4,17 +4,15 @@
 extern "C"
 {
 #endif // __cplusplus
-
 #include <fltKernel.h>
-
 #ifdef __cplusplus
 }
 #endif // __cplusplus
 
 
 VOID NTAPI MyDbgPrint(
-	IN PCSTR Format,
-	IN ...
+	_In_ PCSTR Format,
+	_In_ ...
 )
 {
 	va_list ArgList;
@@ -39,17 +37,25 @@ typedef struct _DEVICE_EXTENSION
 } DEVICE_EXTERNSION, * PDEVICE_EXTENSION;
 
 
+struct VMInfo
+{
+	UINT64 m_cr3;
+	UINT64 m_eptp;
+};
+
 UNICODE_STRING g_DeviceName = RTL_CONSTANT_STRING(L"\\Device\\HackVMDev0");
 UNICODE_STRING g_SymLinkName = RTL_CONSTANT_STRING(L"\\??\\HackVMDev0");
-
-
-#define IOCTL_BUFFERED_DEMO \
-		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x700, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 
 UNICODE_STRING g_vboxDeviceName = RTL_CONSTANT_STRING(L"\\Device\\VBoxDrv");
 PFILE_OBJECT g_vboxFileObject = NULL;
 PDEVICE_OBJECT g_vboxDeviceObject = NULL;
+
+#define IOCTL_ENUM_SESSION_LIST \
+		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x700, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_READ_PHYSICAL_MEMORY \
+		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x701, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 const int g_offset_apSessionHashTab_SUPDRVDEVEXT = 0x928;	// supdrvSessionHashTabLookup
 const int g_offset_pSessionGVM_SUPDRVSESSION = 0x38;
@@ -61,32 +67,31 @@ const int g_offset_cr3_CPUMCTX = 0x170;	// CPUMGetGuestCR3
 const int g_offset_eptp_VMCPU = 0x311d8;	// PGMGetHyperCR3	vmxHCExportGuestCR3AndCR4
 
 
-
-NTSTATUS EnumSessionList(
-	IN OUT PVOID SystemBuffer,
-	IN ULONG InputBufferLength,
-	IN ULONG OutputBufferLength,
-	OUT PULONG ReturnLength
+NTSTATUS GetVMCpuInfo(
+	_Inout_ PVOID SystemBuffer,
+	_In_ ULONG InputBufferLength,
+	_In_ ULONG OutputBufferLength,
+	_Out_ UINT64& ReturnLength
 )
 {
 	UNREFERENCED_PARAMETER(SystemBuffer);
 	UNREFERENCED_PARAMETER(InputBufferLength);
 	UNREFERENCED_PARAMETER(OutputBufferLength);
-	UNREFERENCED_PARAMETER(ReturnLength);
-	/*if (!systembuffer)
+
+	VMInfo* Output = (VMInfo*)SystemBuffer;
+
+	if (!SystemBuffer || OutputBufferLength < sizeof(VMInfo))
 	{
-		returnlength = 0;
-		return status_invalid_parameter;
-	}*/
-	//DbgPrintEx(DPFLTR_SYSTEM_ID, 0, "InputLength: %d, OutputLength: %d\n", InputLength, OutputLength);
-	
+		ReturnLength = 0;
+		return STATUS_INVALID_PARAMETER;
+	}
 	NTSTATUS Status = IoGetDeviceObjectPointer(&g_vboxDeviceName, FILE_ALL_ACCESS, &g_vboxFileObject, &g_vboxDeviceObject);
 	if (!NT_SUCCESS(Status))
 	{
 		ReturnLength = 0;
 		return Status;
 	}
-
+	
 	PVOID* SessionHashTab = (PVOID*)((UCHAR*)g_vboxDeviceObject->DeviceExtension + g_offset_apSessionHashTab_SUPDRVDEVEXT);
 	for (size_t i = 0; i < 0x1FFF; i++)
 	{
@@ -115,11 +120,11 @@ NTSTATUS EnumSessionList(
 			}
 			UINT64 eptp = *(UINT64*)pShwPageCR3R0;
 			MyDbgPrint("guest cpu[%d] cr3=%llx eptp=%llx\n", cpuid, cr3, eptp);
+			Output->m_cr3 = cr3;
+			Output->m_eptp = eptp;
+			ReturnLength = sizeof(VMInfo);
+			break;
 		}
-
-
-
-
 	}
 	if (g_vboxFileObject)
 	{
@@ -130,7 +135,6 @@ NTSTATUS EnumSessionList(
 	{
 		g_vboxDeviceObject = NULL;
 	}
-	ReturnLength = 0;
 	return Status;
 }
 
