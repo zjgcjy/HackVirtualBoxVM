@@ -2,20 +2,22 @@
 #include "mm.hpp"
 #include "global.hpp"
 
-NTSTATUS ReadPhysicalMemory(
+
+NTSTATUS ReadHPA(
     _In_ UINT64 Addr,
     _Out_ PVOID Buffer,
-    _In_ UINT64 Size,
-    _Out_ UINT64& BytesTransferred
+    _In_ UINT64 BufferSize,
+    _Out_ UINT64& ReadBytes
 )
 {
-    if (g_MmCopyMemory == NULL)
-    {
-        UNICODE_STRING FunctionName;
-        RtlInitUnicodeString(&FunctionName, L"MmCopyMemory");
-        g_MmCopyMemory = (fpMmCopyMemory)MmGetSystemRoutineAddress(&FunctionName);
-    }
-    if (!Buffer)
+    ReadBytes = 0;
+    //if (g_MmCopyMemory == NULL)
+    //{
+    //    UNICODE_STRING FunctionName;
+    //    RtlInitUnicodeString(&FunctionName, L"MmCopyMemory");
+    //    g_MmCopyMemory = (fpMmCopyMemory)MmGetSystemRoutineAddress(&FunctionName);
+    //}
+    if (!Buffer || BufferSize > static_cast<unsigned long long>(2) * PAGE_SIZE_1G)
     {
         return STATUS_INVALID_PARAMETER;
     }
@@ -23,15 +25,20 @@ NTSTATUS ReadPhysicalMemory(
     MM_COPY_ADDRESS SrcAddr = { 0 };
     SrcAddr.PhysicalAddress.QuadPart = Addr;
 
-    return MmCopyMemory(Buffer, SrcAddr, Size, MM_COPY_MEMORY_PHYSICAL, &BytesTransferred);
+    return MmCopyMemory(Buffer, SrcAddr, BufferSize, MM_COPY_MEMORY_PHYSICAL, &ReadBytes);
 }
 
-BOOLEAN GPA2HPA(UINT64 gha, UINT64 eptp, UINT64& hpa)
+
+BOOLEAN GPA2HPA(
+    _In_ UINT64 GPA,
+    _In_ UINT64 EPTP,
+    _Out_ UINT64& HPA
+)
 {
-    UINT64 Pml4i = (gha >> PML4I_SHIFT) & 0x1FF;
-    UINT64 Pdpti = (gha >> PDPTI_SHIFT) & 0x1FF;
-    UINT64 Pdi = (gha >> PDI_SHIFT) & 0x1FF;
-    UINT64 Pti = (gha >> PTI_SHIFT) & 0x1FF;
+    UINT64 Pml4i = (GPA >> PML4I_SHIFT) & 0x1FF;
+    UINT64 Pdpti = (GPA >> PDPTI_SHIFT) & 0x1FF;
+    UINT64 Pdi = (GPA >> PDI_SHIFT) & 0x1FF;
+    UINT64 Pti = (GPA >> PTI_SHIFT) & 0x1FF;
 
     PML4E Pml4e = { 0 };
     PDPTE Pdpte = { 0 };
@@ -39,17 +46,17 @@ BOOLEAN GPA2HPA(UINT64 gha, UINT64 eptp, UINT64& hpa)
     PTE Pte = { 0 };
 
     UINT64 RetBytes = 0;
-    eptp &= ~0xFFF;
-    hpa = 0;
+    EPTP &= ~0xFFF;
+    HPA = 0;
 
-    NTSTATUS Status = ReadPhysicalMemory(eptp + 8 * Pml4i, &Pml4e, sizeof(Pml4e), RetBytes);
+    NTSTATUS Status = ReadHPA(EPTP + 8 * Pml4i, &Pml4e, sizeof(Pml4e), RetBytes);
     if (!NT_SUCCESS(Status) || !Pml4e.s.Present)
     {
         MyDbgPrint("Pml4e invalid");
         return FALSE;
     }
 
-    Status = ReadPhysicalMemory(GET_4K_PFN_PAGE(Pml4e.s.PageFrameNumber) + 8 * Pdpti, &Pdpte, sizeof(Pdpte), RetBytes);
+    Status = ReadHPA(GET_4K_PFN_PAGE(Pml4e.s.PageFrameNumber) + 8 * Pdpti, &Pdpte, sizeof(Pdpte), RetBytes);
     if (!NT_SUCCESS(Status) || !Pdpte.s.Present)
     {
         MyDbgPrint("Pdpte invalid");
@@ -58,11 +65,11 @@ BOOLEAN GPA2HPA(UINT64 gha, UINT64 eptp, UINT64& hpa)
     if (Pdpte.s.LargePage)
     {
         PDPTE_LARGE* Pdpte_l = (PDPTE_LARGE*)&Pdpte;
-        hpa = GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber) + GET_1G_PAGE_OFFSET(gha);
+        HPA = GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber) + GET_1G_PAGE_OFFSET(GPA);
         return TRUE;
     }
 
-    Status = ReadPhysicalMemory(GET_4K_PFN_PAGE(Pdpte.s.PageFrameNumber) + 8 * Pdi, &Pde, sizeof(Pde), RetBytes);
+    Status = ReadHPA(GET_4K_PFN_PAGE(Pdpte.s.PageFrameNumber) + 8 * Pdi, &Pde, sizeof(Pde), RetBytes);
     if (!NT_SUCCESS(Status) || !Pde.s.Present)
     {
         MyDbgPrint("Pde invalid");
@@ -71,19 +78,42 @@ BOOLEAN GPA2HPA(UINT64 gha, UINT64 eptp, UINT64& hpa)
     if (Pde.s.LargePage)
     {
         PDE_LARGE* Pde_l = (PDE_LARGE*)&Pde;
-        hpa = GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber) + GET_2M_PAGE_OFFSET(gha);
+        HPA = GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber) + GET_2M_PAGE_OFFSET(GPA);
         return TRUE;
     }
 
-    Status = ReadPhysicalMemory(GET_4K_PFN_PAGE(Pde.s.PageFrameNumber) + 8 * Pti, &Pte, sizeof(Pte), RetBytes);
+    Status = ReadHPA(GET_4K_PFN_PAGE(Pde.s.PageFrameNumber) + 8 * Pti, &Pte, sizeof(Pte), RetBytes);
     if (!NT_SUCCESS(Status) || !Pte.s.Present)
     {
         MyDbgPrint("Pte invalid");
         return FALSE;
     }
-    hpa = GET_4K_PFN_PAGE(Pte.s.PageFrameNumber) + GET_4K_PAGE_OFFSET(gha);
+    HPA = GET_4K_PFN_PAGE(Pte.s.PageFrameNumber) + GET_4K_PAGE_OFFSET(GPA);
     return TRUE;
 }
+
+
+NTSTATUS ReadGPA(
+    _In_ UINT64 GPA,
+    _In_ UINT64 EPTP,
+    _Out_ PVOID Buffer,
+    _In_ UINT64 BufferSize,
+    _Out_ UINT64& ReadBytes
+)
+{
+    ReadBytes = 0;
+    UINT64 HPA = 0;
+    if (!GPA2HPA(GPA, EPTP, HPA))
+    {
+        return STATUS_UNSUCCESSFUL;
+    }
+    return ReadHPA(HPA, Buffer, BufferSize, ReadBytes);
+}
+
+
+
+
+
 
 NTSTATUS ParsePageTableSelf(
     _In_ UINT64 VA,
@@ -111,7 +141,7 @@ NTSTATUS ParsePageTableSelf(
 
     UINT64 RetBytes = 0;
     CR3 &= ~0xFFF;
-    NTSTATUS Status = ReadPhysicalMemory(CR3 + 8 * Pml4i, &Pml4e, sizeof(Pml4e), RetBytes);
+    NTSTATUS Status = ReadHPA(CR3 + 8 * Pml4i, &Pml4e, sizeof(Pml4e), RetBytes);
     if (!NT_SUCCESS(Status) || !Pml4e.s.Present)
     {
         MyDbgPrint("Pml4e invalid");
@@ -119,7 +149,7 @@ NTSTATUS ParsePageTableSelf(
     }
     MyDbgPrint("Pml4e pfn=%llx", Pml4e.s.PageFrameNumber);
 
-    Status = ReadPhysicalMemory(GET_4K_PFN_PAGE(Pml4e.s.PageFrameNumber) + 8 * Pdpti, &Pdpte, sizeof(Pdpte), RetBytes);
+    Status = ReadHPA(GET_4K_PFN_PAGE(Pml4e.s.PageFrameNumber) + 8 * Pdpti, &Pdpte, sizeof(Pdpte), RetBytes);
     if (!NT_SUCCESS(Status) || !Pdpte.s.Present)
     {
         MyDbgPrint("Pdpte invalid");
@@ -129,11 +159,11 @@ NTSTATUS ParsePageTableSelf(
     {
         PDPTE_LARGE* Pdpte_l = (PDPTE_LARGE*)&Pdpte;
         MyDbgPrint("Pdpte_l pfn=%llx", Pdpte_l->s.PageFrameNumber);
-        return ReadPhysicalMemory(GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber) + GET_1G_PAGE_OFFSET(VA), Buffer, BufferSize, ReadBytes);
+        return ReadHPA(GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber) + GET_1G_PAGE_OFFSET(VA), Buffer, BufferSize, ReadBytes);
     }
     MyDbgPrint("Pdpte pfn=%llx", Pdpte.s.PageFrameNumber);
 
-    Status = ReadPhysicalMemory(GET_4K_PFN_PAGE(Pdpte.s.PageFrameNumber) + 8 * Pdi, &Pde, sizeof(Pde), RetBytes);
+    Status = ReadHPA(GET_4K_PFN_PAGE(Pdpte.s.PageFrameNumber) + 8 * Pdi, &Pde, sizeof(Pde), RetBytes);
     if (!NT_SUCCESS(Status) || !Pde.s.Present)
     {
         MyDbgPrint("Pde invalid");
@@ -143,38 +173,20 @@ NTSTATUS ParsePageTableSelf(
     {
         PDE_LARGE* Pde_l = (PDE_LARGE*)&Pde;
         MyDbgPrint("Pde_l pfn=%llx", Pde_l->s.PageFrameNumber);
-        return ReadPhysicalMemory(GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber) + GET_2M_PAGE_OFFSET(VA), Buffer, BufferSize, ReadBytes);
+        return ReadHPA(GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber) + GET_2M_PAGE_OFFSET(VA), Buffer, BufferSize, ReadBytes);
     }
     MyDbgPrint("Pde pfn=%llx", Pde.s.PageFrameNumber);
 
-    Status = ReadPhysicalMemory(GET_4K_PFN_PAGE(Pde.s.PageFrameNumber) + 8 * Pti, &Pte, sizeof(Pte), RetBytes);
+    Status = ReadHPA(GET_4K_PFN_PAGE(Pde.s.PageFrameNumber) + 8 * Pti, &Pte, sizeof(Pte), RetBytes);
     if (!NT_SUCCESS(Status) || !Pte.s.Present)
     {
         MyDbgPrint("Pte invalid");
         return Status;
     }
     MyDbgPrint("Pte pfn=%llx", Pte.s.PageFrameNumber);
-    return ReadPhysicalMemory(GET_4K_PFN_PAGE(Pte.s.PageFrameNumber) + GET_4K_PAGE_OFFSET(VA), Buffer, BufferSize, ReadBytes);
+    return ReadHPA(GET_4K_PFN_PAGE(Pte.s.PageFrameNumber) + GET_4K_PAGE_OFFSET(VA), Buffer, BufferSize, ReadBytes);
 }
 
-
-NTSTATUS ReadGPA(
-    _In_ UINT64 GPA,
-    _In_ UINT64 EPTP,
-    _Out_ PVOID Buffer,
-    _In_ UINT64 Size,
-    _Out_ UINT64& RetBytes
-)
-{
-    RetBytes = 0;
-    UINT64 HPA = 0;
-    if (!GPA2HPA(GPA, EPTP, HPA))
-    {
-        return STATUS_UNSUCCESSFUL;
-    }
-    // MyDbgPrint("HPA=%llx", HPA);
-    return ReadPhysicalMemory(HPA, Buffer, Size, RetBytes);
-}
 
 
 BOOL SearchNtoskrnlBaseFromGPA(

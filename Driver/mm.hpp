@@ -160,14 +160,30 @@ typedef union _PTE {
 
 
 
-NTSTATUS ReadPhysicalMemory(
+NTSTATUS ReadHPA(
     _In_ UINT64 Addr,
     _Out_ PVOID Buffer,
     _In_ UINT64 Size,
-    _Out_ UINT64& BytesTransferred
+    _Out_ UINT64& ReadBytes
 );
 
-BOOLEAN GPA2HPA(UINT64 gha, UINT64 eptp, UINT64& hpa);
+BOOLEAN GPA2HPA(
+    _In_ UINT64 GPA,
+    _In_ UINT64 EPTP,
+    _Out_ UINT64& HPA
+);
+
+NTSTATUS ReadGPA(
+    _In_ UINT64 GPA,
+    _In_ UINT64 EPTP,
+    _Out_ PVOID Buffer,
+    _In_ UINT64 BufferSize,
+    _Out_ UINT64& ReadBytes
+);
+
+
+
+
 
 NTSTATUS ParsePageTableSelf(
     _In_ UINT64 VA,
@@ -177,13 +193,7 @@ NTSTATUS ParsePageTableSelf(
     _Out_ UINT64& ReadBytes
 );
 
-NTSTATUS ReadGPA(
-    _In_ UINT64 GPA,
-    _In_ UINT64 EPTP,
-    _Out_ PVOID Buffer,
-    _In_ UINT64 Size,
-    _Out_ UINT64& RetBytes
-);
+
 
 BOOL SearchNtoskrnlBaseFromGPA(
     UINT64 GPA,

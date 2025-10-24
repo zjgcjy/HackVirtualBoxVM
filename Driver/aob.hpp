@@ -16,7 +16,7 @@ extern "C"
 #endif // __cplusplus
 
 BOOL AobSearcher(
-    _In_ PCHAR Buffer,
+    _Out_ PCHAR Buffer,
     _In_ SIZE_T BufferSize,
     _In_ const PCHAR Pattern,
     _In_ const PCHAR Mask,
