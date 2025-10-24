@@ -21,7 +21,7 @@ extern "C"
 
 #include "driver.hpp"
 #include "mm.hpp"
-
+#include "aob.hpp"
 
 NTSTATUS IrpCreate(
 	_In_ PDEVICE_OBJECT DeviceObject,
@@ -72,6 +72,11 @@ NTSTATUS IrpIoctl(
 		case IOCTL_READ_PHYSICAL_MEMORY:
 		{
 			Status = GetPhysicalMem(Buffer, InputLength, OutputLength, ReturnLength);
+			break;
+		}
+		case IOCTL_ENUM_GVM_KERNEL_MEMORY:
+		{
+			Status = EnumKernelMemory(Buffer, InputLength, OutputLength, ReturnLength);
 			break;
 		}
 		default:

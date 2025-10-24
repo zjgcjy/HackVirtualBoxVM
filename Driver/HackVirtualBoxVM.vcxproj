@@ -93,6 +93,7 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="aob.hpp" />
     <ClInclude Include="driver.hpp" />
     <ClInclude Include="mm.hpp" />
   </ItemGroup>

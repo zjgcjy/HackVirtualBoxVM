@@ -30,5 +30,8 @@
     <ClInclude Include="mm.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="aob.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

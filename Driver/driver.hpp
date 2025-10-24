@@ -57,6 +57,10 @@ PDEVICE_OBJECT g_vboxDeviceObject = NULL;
 #define IOCTL_READ_PHYSICAL_MEMORY \
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x701, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_ENUM_GVM_KERNEL_MEMORY \
+		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x702, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+
 const int g_offset_apSessionHashTab_SUPDRVDEVEXT = 0x928;	// supdrvSessionHashTabLookup
 const int g_offset_pSessionGVM_SUPDRVSESSION = 0x38;
 const int g_offset_cCpus_GVM = 0x134020;	// GVMMR0RegisterVCpu

@@ -8,6 +8,10 @@
 #define IOCTL_READ_PHYSICAL_MEMORY \
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x701, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_ENUM_GVM_KERNEL_MEMORY \
+		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x702, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+
 
 struct VMInfo
 {
@@ -16,7 +20,7 @@ struct VMInfo
 };
 
 
-int TEST(HANDLE& Handle)
+int TestParsePageTable(HANDLE& Handle)
 {
 	DWORD retLength = 0;
 
@@ -31,7 +35,6 @@ int TEST(HANDLE& Handle)
 
 
 	UCHAR buffer[0x10] = { 0 };
-
 	ret = DeviceIoControl(Handle, IOCTL_READ_PHYSICAL_MEMORY, &info, sizeof(info), buffer, sizeof(buffer), &retLength, NULL);
 	if (!ret)
 	{
@@ -43,11 +46,28 @@ int TEST(HANDLE& Handle)
 	{
 		std::cout << std::hex << (int)buffer[i] << std::oct << std::endl;
 	}
+	return 1;
+}
 
+int TestEnumKernelMem(HANDLE& Handle)
+{
+	DWORD retLength = 0;
 
+	VMInfo info = { 0 };
+	BOOL ret = DeviceIoControl(Handle, IOCTL_ENUM_SESSION_LIST, NULL, 0, &info, sizeof(info), &retLength, NULL);
+	if (!ret)
+	{
+		std::cout << "DeviceIoControl error: " << GetLastError() << std::endl;
+		return 0;
+	}
+	std::cout << "cr3=" << std::hex << info.m_cr3 << ", eptp=" << info.m_eptp << std::dec << std::endl;
 
-
-
+	ret = DeviceIoControl(Handle, IOCTL_ENUM_GVM_KERNEL_MEMORY, &info, sizeof(info), NULL, 0, &retLength, NULL);
+	if (!ret)
+	{
+		std::cout << "DeviceIoControl error: " << GetLastError() << std::endl;
+		return 0;
+	}
 	return 1;
 }
 
@@ -60,7 +80,12 @@ int main()
 		std::cout << "CreateFile error: " << GetLastError() << std::endl;
 		return -1;
 	}
-	if (!TEST(Handle))
+	/*if (!TestParsePageTable(Handle))
+	{
+		CloseHandle(Handle);
+		return -1;
+	}*/
+	if (!TestEnumKernelMem(Handle))
 	{
 		CloseHandle(Handle);
 		return -1;
