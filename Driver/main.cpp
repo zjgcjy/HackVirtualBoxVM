@@ -2,7 +2,6 @@
 extern "C"
 {
 #endif // __cplusplus
-
 #include <fltKernel.h>
 #include <minwindef.h>
 #include <windef.h>
@@ -14,14 +13,13 @@ extern "C"
 	//#include <ntifs.h>
 	//#include <wdm.h>
 	//#include <winnt.h>
-
 #ifdef __cplusplus
 }
 #endif // __cplusplus
 
-#include "driver.hpp"
 #include "mm.hpp"
 #include "aob.hpp"
+#include "global.hpp"
 
 NTSTATUS IrpCreate(
 	_In_ PDEVICE_OBJECT DeviceObject,
@@ -45,6 +43,127 @@ NTSTATUS IrpClose(
 	Irp->IoStatus.Status = Status;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return Status;
+}
+
+
+
+NTSTATUS GetVMCpuInfo(
+	_Inout_ PVOID SystemBuffer,
+	_In_ ULONG InputBufferLength,
+	_In_ ULONG OutputBufferLength,
+	_Out_ UINT64& ReturnLength
+)
+{
+	UNREFERENCED_PARAMETER(SystemBuffer);
+	UNREFERENCED_PARAMETER(InputBufferLength);
+	UNREFERENCED_PARAMETER(OutputBufferLength);
+
+	VMInfo* Output = (VMInfo*)SystemBuffer;
+
+	if (!SystemBuffer || OutputBufferLength < sizeof(VMInfo))
+	{
+		ReturnLength = 0;
+		return STATUS_INVALID_PARAMETER;
+	}
+	NTSTATUS Status = IoGetDeviceObjectPointer(&g_vboxDeviceName, FILE_ALL_ACCESS, &g_vboxFileObject, &g_vboxDeviceObject);
+	if (!NT_SUCCESS(Status))
+	{
+		ReturnLength = 0;
+		return Status;
+	}
+
+	PVOID* SessionHashTab = (PVOID*)((UCHAR*)g_vboxDeviceObject->DeviceExtension + g_offset_apSessionHashTab_SUPDRVDEVEXT);
+	for (size_t i = 0; i < 0x1FFF; i++)
+	{
+		PVOID apSessionHashTab = SessionHashTab[i];
+		if (!apSessionHashTab)
+		{
+			continue;
+		}
+		MyDbgPrint("Find VM Session, VM pid maybe in [%d, %d, %d]\n", i, i + 0x1fff, i + 0x1fff + 0x1fff);
+		PVOID pSessionGVM = *(PVOID*)((UCHAR*)apSessionHashTab + g_offset_pSessionGVM_SUPDRVSESSION);
+		if (!pSessionGVM)
+		{
+			continue;
+		}
+		DWORD CpuNumber = *(DWORD*)((UCHAR*)pSessionGVM + g_offset_cCpus_GVM);
+		MyDbgPrint("pSessionGVM=%llx, CpuNumber=%d\n", pSessionGVM, CpuNumber);
+		for (size_t cpuid = 0; cpuid < CpuNumber; cpuid++)
+		{
+			PVOID GvmCPU = (PVOID)((UCHAR*)pSessionGVM + g_offset_aCpus_GVM + cpuid * g_size_GVMCPU);
+			// MyDbgPrint("guest cpu[%d] GvmCPU=%llx\n", cpuid, GvmCPU);
+			UINT64 cr3 = *(UINT64*)((UCHAR*)GvmCPU + g_offset_GstCtx_VMCPU + g_offset_cr3_CPUMCTX);
+			PVOID pShwPageCR3R0 = *(PVOID*)((UCHAR*)GvmCPU + g_offset_eptp_VMCPU);
+			if (!pShwPageCR3R0)
+			{
+				continue;
+			}
+			UINT64 eptp = *(UINT64*)pShwPageCR3R0;
+			MyDbgPrint("guest cpu[%d] cr3=%llx eptp=%llx\n", cpuid, cr3, eptp);
+			Output->m_cr3 = cr3;
+			Output->m_eptp = eptp;
+			ReturnLength = sizeof(VMInfo);
+			break;
+		}
+	}
+	if (g_vboxFileObject)
+	{
+		ObDereferenceObject(g_vboxFileObject);
+		g_vboxFileObject = NULL;
+	}
+	if (g_vboxDeviceObject)
+	{
+		g_vboxDeviceObject = NULL;
+	}
+	return Status;
+}
+
+NTSTATUS GetPhysicalMem(
+	_Inout_ PVOID SystemBuffer,
+	_In_ ULONG InputBufferLength,
+	_In_ ULONG OutputBufferLength,
+	_Out_ UINT64& ReturnLength
+)
+{
+	UNREFERENCED_PARAMETER(SystemBuffer);
+	UNREFERENCED_PARAMETER(InputBufferLength);
+	UNREFERENCED_PARAMETER(OutputBufferLength);
+
+	VMInfo* Input = (VMInfo*)SystemBuffer;
+	if (!SystemBuffer || InputBufferLength < sizeof(VMInfo))
+	{
+		ReturnLength = 0;
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	UINT64 cr3 = Input->m_cr3;
+	UINT64 eptp = Input->m_eptp;
+
+	return ParsePageTableSelf(cr3, eptp, SystemBuffer, OutputBufferLength, ReturnLength);
+}
+
+NTSTATUS EnumKernelMemory(
+	_Inout_ PVOID SystemBuffer,
+	_In_ ULONG InputBufferLength,
+	_In_ ULONG OutputBufferLength,
+	_Out_ UINT64& ReturnLength
+)
+{
+	UNREFERENCED_PARAMETER(SystemBuffer);
+	UNREFERENCED_PARAMETER(InputBufferLength);
+	UNREFERENCED_PARAMETER(OutputBufferLength);
+
+	VMInfo* Input = (VMInfo*)SystemBuffer;
+	if (!SystemBuffer || InputBufferLength < sizeof(VMInfo))
+	{
+		ReturnLength = 0;
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	UINT64 cr3 = Input->m_cr3;
+	UINT64 eptp = Input->m_eptp;
+	return WalkPageTableSelf(cr3, eptp, SystemBuffer, OutputBufferLength, ReturnLength);
+
 }
 
 NTSTATUS IrpIoctl(

@@ -90,11 +90,14 @@
     <FilesToPackage Include="$(TargetPath)" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="aob.cpp" />
+    <ClCompile Include="global.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="mm.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="aob.hpp" />
-    <ClInclude Include="driver.hpp" />
+    <ClInclude Include="global.hpp" />
     <ClInclude Include="mm.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

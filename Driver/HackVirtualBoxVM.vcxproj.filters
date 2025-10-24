@@ -22,15 +22,24 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="mm.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="global.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="aob.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="driver.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="mm.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="aob.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="global.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
