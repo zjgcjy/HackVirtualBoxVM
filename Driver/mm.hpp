@@ -181,25 +181,16 @@ NTSTATUS ReadGPA(
     _Out_ UINT64& ReadBytes
 );
 
-
-
-
-
-NTSTATUS ParsePageTableSelf(
-    _In_ UINT64 VA,
+NTSTATUS EnumGuestKernelMemory(
     _In_ UINT64 CR3,
-    _In_ PVOID Buffer,
-    _In_ UINT64 BufferSize,
-    _Out_ UINT64& ReadBytes
+    _In_ UINT64 EPTP,
+    _Out_ UINT64& NtoskrnlGPA
 );
 
 
 
-BOOL SearchNtoskrnlBaseFromGPA(
-    UINT64 GPA,
-    UINT64 EPTP,
-    SIZE_T Size
-);
+
+
 
 NTSTATUS WalkPageTableSelf(
     _In_ UINT64 CR3,
@@ -208,4 +199,3 @@ NTSTATUS WalkPageTableSelf(
     _In_ UINT64 BufferSize,
     _Out_ UINT64& ReadBytes
 );
-

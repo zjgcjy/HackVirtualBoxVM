@@ -139,7 +139,7 @@ NTSTATUS GetPhysicalMem(
 	UINT64 cr3 = Input->m_cr3;
 	UINT64 eptp = Input->m_eptp;
 
-	return ParsePageTableSelf(cr3, eptp, SystemBuffer, OutputBufferLength, ReturnLength);
+	return ReadGPA(cr3, eptp, SystemBuffer, OutputBufferLength, ReturnLength);
 }
 
 NTSTATUS EnumKernelMemory(

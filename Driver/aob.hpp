@@ -16,9 +16,16 @@ extern "C"
 #endif // __cplusplus
 
 BOOL AobSearcher(
-    _Out_ PCHAR Buffer,
+    _In_ PCHAR Buffer,
     _In_ SIZE_T BufferSize,
     _In_ const PCHAR Pattern,
     _In_ const PCHAR Mask,
     _Out_ SIZE_T& Offset
+);
+
+
+BOOL IsGPANtoskrnlBase(
+    _In_ UINT64 GPA,
+    _In_ UINT64 EPTP,
+    _In_ SIZE_T Size
 );

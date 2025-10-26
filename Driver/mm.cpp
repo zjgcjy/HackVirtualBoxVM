@@ -1,6 +1,5 @@
-
-#include "mm.hpp"
 #include "global.hpp"
+#include "mm.hpp"
 
 
 NTSTATUS ReadHPA(
@@ -17,9 +16,13 @@ NTSTATUS ReadHPA(
     //    RtlInitUnicodeString(&FunctionName, L"MmCopyMemory");
     //    g_MmCopyMemory = (fpMmCopyMemory)MmGetSystemRoutineAddress(&FunctionName);
     //}
-    if (!Buffer || BufferSize > static_cast<unsigned long long>(2) * PAGE_SIZE_1G)
+    if (!Buffer)
     {
-        return STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER_1;
+    }
+    if (BufferSize != 8 || BufferSize !=  PAGE_SIZE_4K)
+    {
+        return STATUS_INVALID_PARAMETER_2;
     }
 
     MM_COPY_ADDRESS SrcAddr = { 0 };
@@ -27,7 +30,6 @@ NTSTATUS ReadHPA(
 
     return MmCopyMemory(Buffer, SrcAddr, BufferSize, MM_COPY_MEMORY_PHYSICAL, &ReadBytes);
 }
-
 
 BOOLEAN GPA2HPA(
     _In_ UINT64 GPA,
@@ -52,14 +54,14 @@ BOOLEAN GPA2HPA(
     NTSTATUS Status = ReadHPA(EPTP + 8 * Pml4i, &Pml4e, sizeof(Pml4e), RetBytes);
     if (!NT_SUCCESS(Status) || !Pml4e.s.Present)
     {
-        MyDbgPrint("Pml4e invalid");
+        MyDbgPrint("Pml4e=%llx is invalid, GPA=%llx", Pml4e.AsUInt, GPA);
         return FALSE;
     }
 
     Status = ReadHPA(GET_4K_PFN_PAGE(Pml4e.s.PageFrameNumber) + 8 * Pdpti, &Pdpte, sizeof(Pdpte), RetBytes);
     if (!NT_SUCCESS(Status) || !Pdpte.s.Present)
     {
-        MyDbgPrint("Pdpte invalid");
+        MyDbgPrint("Pdpte=%llx is invalid, GPA=%llx", Pdpte.AsUInt, GPA);
         return FALSE;
     }
     if (Pdpte.s.LargePage)
@@ -72,7 +74,7 @@ BOOLEAN GPA2HPA(
     Status = ReadHPA(GET_4K_PFN_PAGE(Pdpte.s.PageFrameNumber) + 8 * Pdi, &Pde, sizeof(Pde), RetBytes);
     if (!NT_SUCCESS(Status) || !Pde.s.Present)
     {
-        MyDbgPrint("Pde invalid");
+        MyDbgPrint("Pde=%llx is invalid, GPA=%llx", Pde.AsUInt, GPA);
         return FALSE;
     }
     if (Pde.s.LargePage)
@@ -85,13 +87,12 @@ BOOLEAN GPA2HPA(
     Status = ReadHPA(GET_4K_PFN_PAGE(Pde.s.PageFrameNumber) + 8 * Pti, &Pte, sizeof(Pte), RetBytes);
     if (!NT_SUCCESS(Status) || !Pte.s.Present)
     {
-        MyDbgPrint("Pte invalid");
+        MyDbgPrint("Pte=%llx is invalid, GPA=%llx", Pte.AsUInt, GPA);
         return FALSE;
     }
     HPA = GET_4K_PFN_PAGE(Pte.s.PageFrameNumber) + GET_4K_PAGE_OFFSET(GPA);
     return TRUE;
 }
-
 
 NTSTATUS ReadGPA(
     _In_ UINT64 GPA,
@@ -107,146 +108,131 @@ NTSTATUS ReadGPA(
     {
         return STATUS_UNSUCCESSFUL;
     }
+    if (!Buffer)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
     return ReadHPA(HPA, Buffer, BufferSize, ReadBytes);
 }
 
-
-
-
-
-
-NTSTATUS ParsePageTableSelf(
-    _In_ UINT64 VA,
+NTSTATUS EnumGuestKernelMemory(
     _In_ UINT64 CR3,
-    _In_ PVOID Buffer,
-    _In_ UINT64 BufferSize,
-    _Out_ UINT64& ReadBytes
+    _In_ UINT64 EPTP,
+    _Out_ UINT64 &NtoskrnlGPA
 )
 {
-    if (!Buffer)
-    {
-        ReadBytes = 0;
-        return STATUS_INVALID_PARAMETER;
-    }
+    UINT64 VA = g_KernelModulesMappingBase;
+    UINT64 VA_End = g_KernelModulesMappingEnd;
 
     UINT64 Pml4i = (VA >> PML4I_SHIFT) & 0x1FF;
     UINT64 Pdpti = (VA >> PDPTI_SHIFT) & 0x1FF;
     UINT64 Pdi = (VA >> PDI_SHIFT) & 0x1FF;
     UINT64 Pti = (VA >> PTI_SHIFT) & 0x1FF;
 
-    PML4E Pml4e = { 0 };
-    PDPTE Pdpte = { 0 };
-    PDE Pde = { 0 };
-    PTE Pte = { 0 };
+    PML4E Pml4[PAGE_ENTRY_NUM] = { 0 };
+    PDPTE Pdpt[PAGE_ENTRY_NUM] = { 0 };
+    PDE Pd[PAGE_ENTRY_NUM] = { 0 };
+    PTE Pt[PAGE_ENTRY_NUM] = { 0 };
 
-    UINT64 RetBytes = 0;
     CR3 &= ~0xFFF;
-    NTSTATUS Status = ReadHPA(CR3 + 8 * Pml4i, &Pml4e, sizeof(Pml4e), RetBytes);
-    if (!NT_SUCCESS(Status) || !Pml4e.s.Present)
+    NtoskrnlGPA = 0;
+    UINT64 ReadBytes = 0;
+    NTSTATUS Status = ReadGPA(CR3, EPTP, &Pml4, sizeof(Pml4), ReadBytes);
+    if (!NT_SUCCESS(Status))
     {
-        MyDbgPrint("Pml4e invalid");
+        MyDbgPrint("Parse GuestPageTable error at Pml4=%llx", CR3);
         return Status;
     }
-    MyDbgPrint("Pml4e pfn=%llx", Pml4e.s.PageFrameNumber);
-
-    Status = ReadHPA(GET_4K_PFN_PAGE(Pml4e.s.PageFrameNumber) + 8 * Pdpti, &Pdpte, sizeof(Pdpte), RetBytes);
-    if (!NT_SUCCESS(Status) || !Pdpte.s.Present)
+    for (; VA < VA_End && Pml4i < PAGE_ENTRY_NUM; Pml4i++)
     {
-        MyDbgPrint("Pdpte invalid");
-        return Status;
-    }
-    if (Pdpte.s.LargePage)
-    {
-        PDPTE_LARGE* Pdpte_l = (PDPTE_LARGE*)&Pdpte;
-        MyDbgPrint("Pdpte_l pfn=%llx", Pdpte_l->s.PageFrameNumber);
-        return ReadHPA(GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber) + GET_1G_PAGE_OFFSET(VA), Buffer, BufferSize, ReadBytes);
-    }
-    MyDbgPrint("Pdpte pfn=%llx", Pdpte.s.PageFrameNumber);
-
-    Status = ReadHPA(GET_4K_PFN_PAGE(Pdpte.s.PageFrameNumber) + 8 * Pdi, &Pde, sizeof(Pde), RetBytes);
-    if (!NT_SUCCESS(Status) || !Pde.s.Present)
-    {
-        MyDbgPrint("Pde invalid");
-        return Status;
-    }
-    if (Pde.s.LargePage)
-    {
-        PDE_LARGE* Pde_l = (PDE_LARGE*)&Pde;
-        MyDbgPrint("Pde_l pfn=%llx", Pde_l->s.PageFrameNumber);
-        return ReadHPA(GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber) + GET_2M_PAGE_OFFSET(VA), Buffer, BufferSize, ReadBytes);
-    }
-    MyDbgPrint("Pde pfn=%llx", Pde.s.PageFrameNumber);
-
-    Status = ReadHPA(GET_4K_PFN_PAGE(Pde.s.PageFrameNumber) + 8 * Pti, &Pte, sizeof(Pte), RetBytes);
-    if (!NT_SUCCESS(Status) || !Pte.s.Present)
-    {
-        MyDbgPrint("Pte invalid");
-        return Status;
-    }
-    MyDbgPrint("Pte pfn=%llx", Pte.s.PageFrameNumber);
-    return ReadHPA(GET_4K_PFN_PAGE(Pte.s.PageFrameNumber) + GET_4K_PAGE_OFFSET(VA), Buffer, BufferSize, ReadBytes);
-}
-
-
-
-BOOL SearchNtoskrnlBaseFromGPA(
-    UINT64 GPA,
-    UINT64 EPTP,
-    SIZE_T Size
-)
-{
-    BOOL Status = FALSE;
-    PVOID Buffer = ExAllocatePoolZero(PagedPool, Size, 'SMTG');
-    if (Buffer == NULL)
-    {
-        return Status;
-    }
-    do
-    {
-        UINT64 RetBytes = 0;
-        if (!NT_SUCCESS(ReadGPA(GPA, EPTP, Buffer, Size, RetBytes)))
+        if (!Pml4[Pml4i].s.Present)
         {
-            break;
+            VA += PAGE_SIZE_512G;
+            Pdpti = Pdi = Pti = 0;
+            continue;
         }
-        SIZE_T Offset = 0;
-        // check pe dos
-        if (!AobSearcher((CHAR*)Buffer, Size, "\x4d\x5a\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff\x00\x00", "xxxxxxxxxxxxxxxx", Offset))
+        Status = ReadGPA(GET_4K_PFN_PAGE(Pml4[Pml4i].s.PageFrameNumber), EPTP, &Pdpt, sizeof(Pdpt), ReadBytes);
+        if (!NT_SUCCESS(Status))
         {
-            break;
+            MyDbgPrint("Parse GuestPageTable error at Pdpt=%llx", GET_4K_PFN_PAGE(Pml4[Pml4i].s.PageFrameNumber));
+            return Status;
         }
-        PIMAGE_DOS_HEADER DosHeader = (PIMAGE_DOS_HEADER)Buffer;
-        if (Offset != 0 || DosHeader->e_magic != 'ZM' || DosHeader->e_lfanew >= Size)
+        for (; VA < VA_End && Pdpti < PAGE_ENTRY_NUM; Pdpti++)
         {
-            break;
-        }
-        PIMAGE_NT_HEADERS NtHeader = (PIMAGE_NT_HEADERS)((PCHAR)Buffer + DosHeader->e_lfanew);
-        if (NtHeader->Signature != 'EP')
-        {
-            break;
-        }
-        USHORT NumberOfSections = NtHeader->FileHeader.NumberOfSections;
-        PIMAGE_SECTION_HEADER SecHeader = (PIMAGE_SECTION_HEADER)((PCHAR)NtHeader + sizeof(*NtHeader));
-
-        BOOL flag = FALSE;
-        for (size_t i = 0; i < NumberOfSections; i++, SecHeader++)
-        {
-            if (*(UINT64*)(SecHeader->Name) == 0x45444F434C4F4F50) // POOLCODE
+            if (!Pdpt[Pdpti].s.Present)
             {
-                flag = TRUE;
-                break;
+                VA += PAGE_SIZE_1G;
+                Pdi = Pti = 0;
+                continue;
             }
+            if (!Pdpt[Pdpti].s.LargePage)
+            {
+                Status = ReadGPA(GET_4K_PFN_PAGE(Pdpt[Pdpti].s.PageFrameNumber), EPTP, &Pd, sizeof(Pd), ReadBytes);
+                if (!NT_SUCCESS(Status))
+                {
+                    MyDbgPrint("Parse GuestPageTable error at Pdt=%llx", GET_4K_PFN_PAGE(Pdpt[Pdpti].s.PageFrameNumber));
+                    return Status;
+                }
+                for (; VA < VA_End && Pdi < PAGE_ENTRY_NUM; Pdi++)
+                {
+                    if (!Pd[Pdi].s.Present)
+                    {
+                        VA += PAGE_SIZE_2M;
+                        Pti = 0;
+                        continue;
+                    }
+                    if (!Pd[Pdi].s.LargePage)
+                    {
+                        Status = ReadGPA(GET_4K_PFN_PAGE(Pd[Pdi].s.PageFrameNumber), EPTP, &Pt, sizeof(Pt), ReadBytes);
+                        if (!NT_SUCCESS(Status))
+                        {
+                            MyDbgPrint("Parse GuestPageTable error at Pt=%llx", GET_4K_PFN_PAGE(Pd[Pdi].s.PageFrameNumber));
+                            return Status;
+                        }
+                        for (; VA < VA_End && Pti < PAGE_ENTRY_NUM; Pti++)
+                        {
+                            if (!Pt[Pti].s.Present)
+                            {
+                                VA += PAGE_SIZE_4K;
+                                continue;
+                            }
+                            // read
+                            if (IsGPANtoskrnlBase(GET_4K_PFN_PAGE(Pt[Pti].s.PageFrameNumber), EPTP, PAGE_SIZE_4K))
+                            {
+                                NtoskrnlGPA = GET_4K_PFN_PAGE(Pt[Pti].s.PageFrameNumber);
+                                MyDbgPrint("Found NT at pte=%llx, va=%llx", NtoskrnlGPA, VA);
+                            }
+                            VA += PAGE_SIZE_4K;
+                        }
+                    }
+                    else
+                    {
+                        // read
+                        PDE_LARGE* Pde_l = (PDE_LARGE*)&Pd[Pdi];
+                        if (IsGPANtoskrnlBase(GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber), EPTP, PAGE_SIZE_2M))
+                        {
+                            NtoskrnlGPA = GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber);
+                            MyDbgPrint("Found NT at pde_l=%llx, va=%llx", NtoskrnlGPA, VA);
+                        }
+                        VA += PAGE_SIZE_2M;
+                    }
+                    Pti = 0;
+                }
+            }
+            else
+            {
+                // read
+                PDPTE_LARGE* Pdpte_l = (PDPTE_LARGE*)&Pdpt[Pdpti];
+                if (IsGPANtoskrnlBase(GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber), EPTP, PAGE_SIZE_1G))
+                {
+                    NtoskrnlGPA = GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber);
+                    MyDbgPrint("Found NT at pdpte_l=%llx, va=%llx", NtoskrnlGPA, VA);
+                }
+                VA += PAGE_SIZE_1G; 
+            }
+            Pdi = Pti = 0;
         }
-        if (!flag)
-        {
-            break;
-        }
-
-        Status = TRUE;
-    } while (FALSE);
-    if (Buffer)
-    {
-        ExFreePoolWithTag(Buffer, 'SMTG');
-        Buffer = NULL;
+        Pdpti = Pdi = Pti = 0;
     }
     return Status;
 }
@@ -263,115 +249,15 @@ NTSTATUS WalkPageTableSelf(
     UNREFERENCED_PARAMETER(Buffer);
     UNREFERENCED_PARAMETER(BufferSize);
 
-    UINT64 VA = g_KernelModulesMappingBase;
-    UINT64 VA_End = g_KernelModulesMappingEnd;
-
-
-    UINT64 Pml4i = (VA >> PML4I_SHIFT) & 0x1FF; // 
-    UINT64 Pdpti = (VA >> PDPTI_SHIFT) & 0x1FF; // 0
-    UINT64 Pdi = (VA >> PDI_SHIFT) & 0x1FF;     // 0
-    UINT64 Pti = (VA >> PTI_SHIFT) & 0x1FF;     // 0
-
-    PML4E Pml4[PAGE_ENTRY_NUM] = { 0 };
-    PDPTE Pdpt[PAGE_ENTRY_NUM] = { 0 };
-    PDE Pd[PAGE_ENTRY_NUM] = { 0 };
-    PTE Pt[PAGE_ENTRY_NUM] = { 0 };
-
-    UINT64 RetBytes = 0;
-    CR3 &= ~0xFFF;
-    NTSTATUS Status = ReadGPA(CR3, EPTP, &Pml4, sizeof(Pml4), RetBytes);
-    if (!NT_SUCCESS(Status))
+    NTSTATUS Status = STATUS_UNSUCCESSFUL;
+    ReadBytes = 0;
+    UINT64 NtoskrnlGPA = 0;
+    if (!NT_SUCCESS(EnumGuestKernelMemory(CR3, EPTP, NtoskrnlGPA)))
     {
-        ReadBytes = 0;
         return Status;
     }
+    MyDbgPrint("Found NtoskrnlGPA at =%llx", NtoskrnlGPA);
 
-    for (; VA < VA_End && Pml4i < PAGE_ENTRY_NUM; Pml4i++)
-    {
-        if (!Pml4[Pml4i].s.Present)
-        {
-            VA += PAGE_SIZE_512G;
-            continue;
-        }
-        // MyDbgPrint("Pml4i=%llx, pfn=%llx", Pml4i, Pml4[Pml4i].s.PageFrameNumber);
-        Status = ReadGPA(GET_4K_PFN_PAGE(Pml4[Pml4i].s.PageFrameNumber), EPTP, &Pdpt, sizeof(Pdpt), RetBytes);
-        if (!NT_SUCCESS(Status))
-        {
-            return Status;
-        }
-        for (; VA < VA_End && Pdpti < PAGE_ENTRY_NUM; Pdpti++)
-        {
-            if (!Pdpt[Pdpti].s.Present)
-            {
-                VA += PAGE_SIZE_1G;
-                continue;
-            }
-            if (Pdpt[Pdpti].s.LargePage)
-            {
-                PDPTE_LARGE* Pdpte_l = (PDPTE_LARGE*)&Pdpt[Pdpti];
-                MyDbgPrint("Pdpte_l pfn=%llx", Pdpte_l->s.PageFrameNumber);
-                if (SearchNtoskrnlBaseFromGPA(GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber), EPTP, PAGE_SIZE_1G))
-                {
-                    MyDbgPrint("Found NT at pdpte_l=%llx, va=%llx", GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber), VA);
-                }
-                VA += PAGE_SIZE_1G;
-            }
-            else
-            {
-                // MyDbgPrint("Pdpti=%llx, pfn=%llx", Pdpti, Pdpt[Pdpti].s.PageFrameNumber);
-                Status = ReadGPA(GET_4K_PFN_PAGE(Pdpt[Pdpti].s.PageFrameNumber), EPTP, &Pd, sizeof(Pd), RetBytes);
-                if (!NT_SUCCESS(Status))
-                {
-                    return Status;
-                }
-                for (; VA < VA_End && Pdi < PAGE_ENTRY_NUM; Pdi++)
-                {
-                    if (!Pd[Pdi].s.Present)
-                    {
-                        VA += PAGE_SIZE_2M;
-                        continue;
-                    }
-                    if (Pd[Pdi].s.LargePage)
-                    {
-                        PDE_LARGE* Pde_l = (PDE_LARGE*)&Pd[Pdi];
-                        MyDbgPrint("Pde_l pfn=%llx", Pde_l->s.PageFrameNumber);
-                        if (SearchNtoskrnlBaseFromGPA(GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber), EPTP, PAGE_SIZE_2M))
-                        {
-                            MyDbgPrint("Found NT at pde_l=%llx, va=%llx", GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber), VA);
-                        }
-                        VA += PAGE_SIZE_2M;
-                    }
-                    else
-                    {
-                        // MyDbgPrint("Pdi=%llx, pfn=%llx", Pdi, Pd[Pdi].s.PageFrameNumber);
-                        Status = ReadGPA(GET_4K_PFN_PAGE(Pd[Pdi].s.PageFrameNumber), EPTP, &Pt, sizeof(Pt), RetBytes);
-                        if (!NT_SUCCESS(Status))
-                        {
-                            return Status;
-                        }
-                        for (; VA < VA_End && Pti < PAGE_ENTRY_NUM; Pti++)
-                        {
-                            if (!Pt[Pti].s.Present)
-                            {
-                                VA += PAGE_SIZE_4K;
-                                continue;
-                            }
-                            // MyDbgPrint("Pte pfn=%llx", Pt[Pti].s.PageFrameNumber);
-                            if (SearchNtoskrnlBaseFromGPA(GET_4K_PFN_PAGE(Pt[Pti].s.PageFrameNumber), EPTP, PAGE_SIZE_4K))
-                            {
-                                MyDbgPrint("Found NT at pte=%llx, va=%llx", GET_4K_PFN_PAGE(Pt[Pti].s.PageFrameNumber), VA);
-                            }
-                            VA += PAGE_SIZE_4K;
-                        }
-                        Pti = 0;
-                    }
-                }
-                Pdi = 0;
-            }
-        }
-        Pdpti = 0;
-    }
     return Status;
 }
-
 
