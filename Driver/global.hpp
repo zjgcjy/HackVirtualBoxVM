@@ -65,7 +65,22 @@ extern const int g_offset_cr3_CPUMCTX;		// CPUMGetGuestCR3
 extern const int g_offset_eptp_VMCPU;		// PGMGetHyperCR3	vmxHCExportGuestCR3AndCR4
 
 
+struct WinRelatedData {
+	int PsActiveProcessHead_Ntoskrnl;	// PsGetNextProcess
+	int UniqueProcessId_EPROCESS;	// dt _EPROCESS UniqueProcessId
+	int ActiveProcessLinks_EPROCESS;	// dt _EPROCESS ActiveProcessLinks
+	int ImageFileName_EPROCESS;	// dt _EPROCESS ImageFileName
+	int DirectoryTableBase_KPROCESS;	// dt _KPROCESS DirectoryTableBase
+};
+
+extern WinRelatedData g_offset_1903_18363_Nt18362;
+
+
 VOID NTAPI MyDbgPrint(
 	_In_ PCSTR Format,
 	_In_ ...
 );
+
+#define MyDbgPrintEx(fmt, ...) \
+    MyDbgPrint("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+

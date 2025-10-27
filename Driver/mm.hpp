@@ -181,14 +181,29 @@ NTSTATUS ReadGPA(
     _Out_ UINT64& ReadBytes
 );
 
-NTSTATUS EnumGuestKernelMemory(
+BOOLEAN GVA2GPA(
+    _In_ UINT64 GVA,
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
-    _Out_ UINT64& NtoskrnlGPA
+    _Out_ UINT64& GPA
+);
+
+NTSTATUS ReadGVA(
+    _In_ UINT64 GVA,
+    _In_ UINT64 CR3,
+    _In_ UINT64 EPTP,
+    _Out_ PVOID Buffer,
+    _In_ UINT64 BufferSize,
+    _Out_ UINT64& ReadBytes
 );
 
 
-
+NTSTATUS EnumGuestKernelMemory(
+    _In_ UINT64 CR3,
+    _In_ UINT64 EPTP,
+    _Out_ UINT64& NtoskrnlGPA,
+    _Out_ UINT64& NtoskrnlGVA
+);
 
 
 
