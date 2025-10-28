@@ -197,13 +197,15 @@ NTSTATUS ReadGVA(
     _Out_ UINT64& ReadBytes
 );
 
-
-NTSTATUS EnumGuestKernelMemory(
+NTSTATUS GetNtosBaseByEnumPageTable(
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
     _Out_ UINT64& NtoskrnlGPA,
     _Out_ UINT64& NtoskrnlGVA
 );
+
+
+
 
 
 

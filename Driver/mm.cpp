@@ -55,14 +55,14 @@ BOOLEAN GPA2HPA(
     NTSTATUS Status = ReadHPA(EPTP + 8 * Pml4i, &Pml4e, sizeof(Pml4e), RetBytes);
     if (!NT_SUCCESS(Status) || !Pml4e.s.Present)
     {
-        MyDbgPrintEx("Pml4e=%llx is invalid, GPA=%llx", Pml4e.AsUInt, GPA);
+        MyDbgPrintEx("Pml4e=%llx is invalid, HPA=%llx", Pml4e.AsUInt, EPTP + 8 * Pml4i);
         return FALSE;
     }
 
     Status = ReadHPA(GET_4K_PFN_PAGE(Pml4e.s.PageFrameNumber) + 8 * Pdpti, &Pdpte, sizeof(Pdpte), RetBytes);
     if (!NT_SUCCESS(Status) || !Pdpte.s.Present)
     {
-        MyDbgPrintEx("Pdpte=%llx is invalid, GPA=%llx", Pdpte.AsUInt, GPA);
+        MyDbgPrintEx("Pdpte=%llx is invalid, HPA=%llx", Pdpte.AsUInt, GET_4K_PFN_PAGE(Pml4e.s.PageFrameNumber) + 8 * Pdpti);
         return FALSE;
     }
     if (Pdpte.s.LargePage)
@@ -75,7 +75,7 @@ BOOLEAN GPA2HPA(
     Status = ReadHPA(GET_4K_PFN_PAGE(Pdpte.s.PageFrameNumber) + 8 * Pdi, &Pde, sizeof(Pde), RetBytes);
     if (!NT_SUCCESS(Status) || !Pde.s.Present)
     {
-        MyDbgPrintEx("Pde=%llx is invalid, GPA=%llx", Pde.AsUInt, GPA);
+        MyDbgPrintEx("Pde=%llx is invalid, HPA=%llx", Pde.AsUInt, GET_4K_PFN_PAGE(Pdpte.s.PageFrameNumber) + 8 * Pdi);
         return FALSE;
     }
     if (Pde.s.LargePage)
@@ -88,7 +88,7 @@ BOOLEAN GPA2HPA(
     Status = ReadHPA(GET_4K_PFN_PAGE(Pde.s.PageFrameNumber) + 8 * Pti, &Pte, sizeof(Pte), RetBytes);
     if (!NT_SUCCESS(Status) || !Pte.s.Present)
     {
-        MyDbgPrintEx("Pte=%llx is invalid, GPA=%llx", Pte.AsUInt, GPA);
+        MyDbgPrintEx("Pte=%llx is invalid, HPA=%llx", Pte.AsUInt, GET_4K_PFN_PAGE(Pde.s.PageFrameNumber) + 8 * Pti);
         return FALSE;
     }
     HPA = GET_4K_PFN_PAGE(Pte.s.PageFrameNumber) + GET_4K_PAGE_OFFSET(GPA);
@@ -115,7 +115,6 @@ NTSTATUS ReadGPA(
     }
     return ReadHPA(HPA, Buffer, BufferSize, ReadBytes);
 }
-
 
 BOOLEAN GVA2GPA(
     _In_ UINT64 GVA,
@@ -182,7 +181,6 @@ BOOLEAN GVA2GPA(
     return TRUE;
 }
 
-
 NTSTATUS ReadGVA(
     _In_ UINT64 GVA,
     _In_ UINT64 CR3,
@@ -205,8 +203,7 @@ NTSTATUS ReadGVA(
     return ReadGPA(GPA, EPTP, Buffer, BufferSize, ReadBytes);
 }
 
-
-NTSTATUS EnumGuestKernelMemory(
+NTSTATUS GetNtosBaseByEnumPageTable(
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
     _Out_ UINT64& NtoskrnlGPA,
@@ -233,7 +230,7 @@ NTSTATUS EnumGuestKernelMemory(
     NTSTATUS Status = ReadGPA(CR3, EPTP, &Pml4, sizeof(Pml4), ReadBytes);
     if (!NT_SUCCESS(Status))
     {
-        MyDbgPrintEx("Parse GuestPageTable error at Pml4=%llx", CR3);
+        MyDbgPrintEx("Pml4=%llx is invalid", CR3);
         return Status;
     }
     for (; VA < VA_End && Pml4i < PAGE_ENTRY_NUM; Pml4i++)
@@ -247,7 +244,7 @@ NTSTATUS EnumGuestKernelMemory(
         Status = ReadGPA(GET_4K_PFN_PAGE(Pml4[Pml4i].s.PageFrameNumber), EPTP, &Pdpt, sizeof(Pdpt), ReadBytes);
         if (!NT_SUCCESS(Status))
         {
-            MyDbgPrintEx("Parse GuestPageTable error at Pdpt=%llx", GET_4K_PFN_PAGE(Pml4[Pml4i].s.PageFrameNumber));
+            MyDbgPrintEx("Pdpt=%llx is invalid", GET_4K_PFN_PAGE(Pml4[Pml4i].s.PageFrameNumber));
             return Status;
         }
         for (; VA < VA_End && Pdpti < PAGE_ENTRY_NUM; Pdpti++)
@@ -263,7 +260,7 @@ NTSTATUS EnumGuestKernelMemory(
                 Status = ReadGPA(GET_4K_PFN_PAGE(Pdpt[Pdpti].s.PageFrameNumber), EPTP, &Pd, sizeof(Pd), ReadBytes);
                 if (!NT_SUCCESS(Status))
                 {
-                    MyDbgPrintEx("Parse GuestPageTable error at Pdt=%llx", GET_4K_PFN_PAGE(Pdpt[Pdpti].s.PageFrameNumber));
+                    MyDbgPrintEx("Pdt=%llx is invalid", GET_4K_PFN_PAGE(Pdpt[Pdpti].s.PageFrameNumber));
                     return Status;
                 }
                 for (; VA < VA_End && Pdi < PAGE_ENTRY_NUM; Pdi++)
@@ -279,7 +276,7 @@ NTSTATUS EnumGuestKernelMemory(
                         Status = ReadGPA(GET_4K_PFN_PAGE(Pd[Pdi].s.PageFrameNumber), EPTP, &Pt, sizeof(Pt), ReadBytes);
                         if (!NT_SUCCESS(Status))
                         {
-                            MyDbgPrintEx("Parse GuestPageTable error at Pt=%llx", GET_4K_PFN_PAGE(Pd[Pdi].s.PageFrameNumber));
+                            MyDbgPrintEx("Pt=%llx is invalid", GET_4K_PFN_PAGE(Pd[Pdi].s.PageFrameNumber));
                             return Status;
                         }
                         for (; VA < VA_End && Pti < PAGE_ENTRY_NUM; Pti++)
@@ -294,7 +291,7 @@ NTSTATUS EnumGuestKernelMemory(
                             {
                                 NtoskrnlGPA = GET_4K_PFN_PAGE(Pt[Pti].s.PageFrameNumber);
                                 NtoskrnlGVA = VA;
-                                MyDbgPrintEx("Found NT at pte=%llx, va=%llx", NtoskrnlGPA, VA);
+                                //MyDbgPrintEx("gpa=%llx, va=%llx", NtoskrnlGPA, VA);
                             }
                             VA += PAGE_SIZE_4K;
                         }
@@ -307,7 +304,7 @@ NTSTATUS EnumGuestKernelMemory(
                         {
                             NtoskrnlGPA = GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber);
                             NtoskrnlGVA = VA;
-                            MyDbgPrintEx("Found NT at pde_l=%llx, va=%llx", NtoskrnlGPA, VA);
+                            //MyDbgPrintEx("gpa=%llx, va=%llx", NtoskrnlGPA, VA);
                         }
                         VA += PAGE_SIZE_2M;
                     }
@@ -322,7 +319,7 @@ NTSTATUS EnumGuestKernelMemory(
                 {
                     NtoskrnlGPA = GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber);
                     NtoskrnlGVA = VA;
-                    MyDbgPrintEx("Found NT at pdpte_l=%llx, va=%llx", NtoskrnlGPA, VA);
+                    //MyDbgPrintEx("gpa=%llx, va=%llx", NtoskrnlGPA, VA);
                 }
                 VA += PAGE_SIZE_1G; 
             }
@@ -332,6 +329,63 @@ NTSTATUS EnumGuestKernelMemory(
     }
     return Status;
 }
+
+
+NTSTATUS PrintGuestProcessList(
+    _In_ UINT64 NtoskrnlGVA,
+    _In_ WinRelatedData& Offset,
+    _In_ UINT64 CR3,
+    _In_ UINT64 EPTP
+)
+{
+    UINT64 ReadBytes = 0;
+    UINT64 PsActiveProcessHead = 0;
+    NTSTATUS Status = ReadGVA(NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl, CR3, EPTP, &PsActiveProcessHead, sizeof(PsActiveProcessHead), ReadBytes);
+    if (!NT_SUCCESS(Status))
+    {
+        return Status;
+    }
+
+    UINT64 VA = PsActiveProcessHead;
+    LIST_ENTRY head = { 0 };
+    do
+    {
+        PEPROCESS Process = PEPROCESS(VA - Offset.ActiveProcessLinks_EPROCESS);
+        UINT64 Proc_pid = 0;
+        UINT64 Proc_cr3 = 0;
+        CHAR Proc_name[16] = { 0 };
+
+        Status = ReadGVA((UINT64)((PCHAR)Process + Offset.UniqueProcessId_EPROCESS), CR3, EPTP, &Proc_pid, sizeof(Proc_pid), ReadBytes);
+        if (!NT_SUCCESS(Status))
+        {
+            return Status;
+        }
+        Status = ReadGVA((UINT64)((PCHAR)Process + Offset.DirectoryTableBase_KPROCESS), CR3, EPTP, &Proc_cr3, sizeof(Proc_cr3), ReadBytes);
+        if (!NT_SUCCESS(Status))
+        {
+            return Status;
+        }
+        Status = ReadGVA((UINT64)((PCHAR)Process + Offset.ImageFileName_EPROCESS), CR3, EPTP, &Proc_name, sizeof(Proc_name) - 1, ReadBytes);
+        if (!NT_SUCCESS(Status))
+        {
+            return Status;
+        }
+
+        //MyDbgPrintEx("VA=%p, Process=%p", VA, Process);
+        MyDbgPrintEx("pid=%llx, cr3=%llx, name=%s", Proc_pid, Proc_cr3, Proc_name);
+
+        Status = ReadGVA(VA, CR3, EPTP, &head, sizeof(head), ReadBytes);
+        if (!NT_SUCCESS(Status))
+        {
+            return Status;
+        }
+        //MyDbgPrintEx("Flink=%p Blink=%p", head.Flink, head.Blink);
+        VA = (UINT64)head.Flink;
+    } while (VA != PsActiveProcessHead && VA != NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl);
+    return Status;
+}
+
+
 
 
 NTSTATUS WalkPageTableSelf(
@@ -349,57 +403,17 @@ NTSTATUS WalkPageTableSelf(
     ReadBytes = 0;
     UINT64 NtoskrnlGPA = 0;
     UINT64 NtoskrnlGVA = 0;
-    if (!NT_SUCCESS(EnumGuestKernelMemory(CR3, EPTP, NtoskrnlGPA, NtoskrnlGVA)))
+    if (!NT_SUCCESS(GetNtosBaseByEnumPageTable(CR3, EPTP, NtoskrnlGPA, NtoskrnlGVA)))
     {
         return Status;
     }
-    MyDbgPrintEx("Found NtoskrnlGPA=%llx, NtoskrnlGVA=%llx", NtoskrnlGPA, NtoskrnlGVA);
+    MyDbgPrintEx("NtoskrnlGPA=%llx, NtoskrnlGVA=%llx", NtoskrnlGPA, NtoskrnlGVA);
 
     WinRelatedData Offset = g_offset_1903_18363_Nt18362;
-
-    UINT64 PsActiveProcessHeadGVA = 0;
-    Status = ReadGVA(NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl, CR3, EPTP, &PsActiveProcessHeadGVA, sizeof(PsActiveProcessHeadGVA), ReadBytes);
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(PrintGuestProcessList(NtoskrnlGVA, Offset, CR3, EPTP)))
     {
         return Status;
     }
-    MyDbgPrintEx("PsActiveProcessHead=%llx", NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl);
-    UINT64 VA = PsActiveProcessHeadGVA;
-    LIST_ENTRY head = { 0 };
-    do
-    {
-        PEPROCESS Process = PEPROCESS(VA - Offset.ActiveProcessLinks_EPROCESS);
-        UINT64 Proc_pid = 0;
-        UINT64 Proc_cr3 = 0;
-        CHAR Proc_name[16] = { 0 };
-        
-        Status = ReadGVA((UINT64)((PCHAR)Process + Offset.UniqueProcessId_EPROCESS), CR3, EPTP, &Proc_pid, sizeof(Proc_pid), ReadBytes);
-        if (!NT_SUCCESS(Status))
-        {
-            return Status;
-        }
-        Status = ReadGVA((UINT64)((PCHAR)Process + Offset.DirectoryTableBase_KPROCESS), CR3, EPTP, &Proc_cr3, sizeof(Proc_cr3), ReadBytes);
-        if (!NT_SUCCESS(Status))
-        {
-            return Status;
-        }
-        Status = ReadGVA((UINT64)((PCHAR)Process + Offset.ImageFileName_EPROCESS), CR3, EPTP, &Proc_name, sizeof(Proc_name)-1, ReadBytes);
-        if (!NT_SUCCESS(Status))
-        {
-            return Status;
-        }
-        //MyDbgPrintEx("VA=%p, Process=%p", VA, Process);
-        MyDbgPrintEx("pid=%llx, cr3=%llx, name=%s", Proc_pid, Proc_cr3, Proc_name);
-
-        Status = ReadGVA(VA, CR3, EPTP, &head, sizeof(head), ReadBytes);
-        if (!NT_SUCCESS(Status))
-        {
-            return Status;
-        }
-        //MyDbgPrintEx("Flink=%p Blink=%p", head.Flink, head.Blink);
-        VA = (UINT64)head.Flink;
-    } while (VA != PsActiveProcessHeadGVA && VA != NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl);
-
     return Status;
 }
 
