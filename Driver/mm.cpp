@@ -20,8 +20,9 @@ NTSTATUS ReadHPA(
     {
         return STATUS_INVALID_PARAMETER_1;
     }
-    if (BufferSize != 8 && BufferSize !=  PAGE_SIZE_4K)
+    if (BufferSize > PAGE_SIZE_4K)
     {
+        MyDbgPrintEx("BufferSize=%llx", BufferSize);
         return STATUS_INVALID_PARAMETER_2;
     }
 
@@ -353,14 +354,51 @@ NTSTATUS WalkPageTableSelf(
         return Status;
     }
     MyDbgPrintEx("Found NtoskrnlGPA=%llx, NtoskrnlGVA=%llx", NtoskrnlGPA, NtoskrnlGVA);
+
+    WinRelatedData Offset = g_offset_1903_18363_Nt18362;
+
     UINT64 PsActiveProcessHeadGVA = 0;
-    //UINT64 PsActiveProcessHead;
-    Status = ReadGVA(NtoskrnlGVA + g_offset_1903_18363_Nt18362.PsActiveProcessHead_Ntoskrnl, CR3, EPTP, &PsActiveProcessHeadGVA, sizeof(PsActiveProcessHeadGVA), ReadBytes);
+    Status = ReadGVA(NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl, CR3, EPTP, &PsActiveProcessHeadGVA, sizeof(PsActiveProcessHeadGVA), ReadBytes);
     if (!NT_SUCCESS(Status))
     {
         return Status;
     }
-    MyDbgPrintEx("Found PsActiveProcessHeadGVA at =%llx", PsActiveProcessHeadGVA);
+    MyDbgPrintEx("PsActiveProcessHead=%llx", NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl);
+    UINT64 VA = PsActiveProcessHeadGVA;
+    LIST_ENTRY head = { 0 };
+    do
+    {
+        PEPROCESS Process = PEPROCESS(VA - Offset.ActiveProcessLinks_EPROCESS);
+        UINT64 Proc_pid = 0;
+        UINT64 Proc_cr3 = 0;
+        CHAR Proc_name[16] = { 0 };
+        
+        Status = ReadGVA((UINT64)((PCHAR)Process + Offset.UniqueProcessId_EPROCESS), CR3, EPTP, &Proc_pid, sizeof(Proc_pid), ReadBytes);
+        if (!NT_SUCCESS(Status))
+        {
+            return Status;
+        }
+        Status = ReadGVA((UINT64)((PCHAR)Process + Offset.DirectoryTableBase_KPROCESS), CR3, EPTP, &Proc_cr3, sizeof(Proc_cr3), ReadBytes);
+        if (!NT_SUCCESS(Status))
+        {
+            return Status;
+        }
+        Status = ReadGVA((UINT64)((PCHAR)Process + Offset.ImageFileName_EPROCESS), CR3, EPTP, &Proc_name, sizeof(Proc_name)-1, ReadBytes);
+        if (!NT_SUCCESS(Status))
+        {
+            return Status;
+        }
+        //MyDbgPrintEx("VA=%p, Process=%p", VA, Process);
+        MyDbgPrintEx("pid=%llx, cr3=%llx, name=%s", Proc_pid, Proc_cr3, Proc_name);
+
+        Status = ReadGVA(VA, CR3, EPTP, &head, sizeof(head), ReadBytes);
+        if (!NT_SUCCESS(Status))
+        {
+            return Status;
+        }
+        //MyDbgPrintEx("Flink=%p Blink=%p", head.Flink, head.Blink);
+        VA = (UINT64)head.Flink;
+    } while (VA != PsActiveProcessHeadGVA && VA != NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl);
 
     return Status;
 }

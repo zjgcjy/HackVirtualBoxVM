@@ -28,7 +28,7 @@ const int g_offset_eptp_VMCPU = 0x311d8;		// PGMGetHyperCR3	vmxHCExportGuestCR3A
 //const int g_offset_ImageFileName_EPROCESS = 0x338;
 //const int g_offset_DirectoryTableBase_KPROCESS = 0x28;
 
-WinRelatedData g_offset_1903_18363_Nt18362 = { 0x438b40, 0x1d0, 0x1d8, 0x338, 0x28};
+WinRelatedData g_offset_1903_18363_Nt18362 = { 0x438b40, 0x2e8, 0x2f0, 0x450, 0x28};
 
 VOID NTAPI MyDbgPrint(
 	_In_ PCSTR Format,
