@@ -331,13 +331,21 @@ NTSTATUS GetNtosBaseByEnumPageTable(
 }
 
 
-NTSTATUS PrintGuestProcessList(
+NTSTATUS GetGuestProcessList(
     _In_ UINT64 NtoskrnlGVA,
     _In_ WinRelatedData& Offset,
     _In_ UINT64 CR3,
-    _In_ UINT64 EPTP
+    _In_ UINT64 EPTP,
+    _Out_ ProcList* procBuffer,
+    _In_ UINT64 BufferSize,
+    _Out_ UINT64& ReturnLength
 )
 {
+    ReturnLength = 0;
+    if (!procBuffer)
+    {
+        return STATUS_INVALID_PARAMETER_1;
+    }
     UINT64 ReadBytes = 0;
     UINT64 PsActiveProcessHead = 0;
     NTSTATUS Status = ReadGVA(NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl, CR3, EPTP, &PsActiveProcessHead, sizeof(PsActiveProcessHead), ReadBytes);
@@ -348,6 +356,7 @@ NTSTATUS PrintGuestProcessList(
 
     UINT64 VA = PsActiveProcessHead;
     LIST_ENTRY head = { 0 };
+    UINT procCount = 0;
     do
     {
         PEPROCESS Process = PEPROCESS(VA - Offset.ActiveProcessLinks_EPROCESS);
@@ -373,7 +382,11 @@ NTSTATUS PrintGuestProcessList(
 
         //MyDbgPrintEx("VA=%p, Process=%p", VA, Process);
         MyDbgPrintEx("pid=%llx, cr3=%llx, name=%s", Proc_pid, Proc_cr3, Proc_name);
-
+        procCount += 1;
+        procBuffer->cr3 = Proc_cr3;
+        procBuffer->pid = Proc_pid;
+        memcpy(procBuffer->name, Proc_name, 15);
+        procBuffer++;
         Status = ReadGVA(VA, CR3, EPTP, &head, sizeof(head), ReadBytes);
         if (!NT_SUCCESS(Status))
         {
@@ -381,39 +394,9 @@ NTSTATUS PrintGuestProcessList(
         }
         //MyDbgPrintEx("Flink=%p Blink=%p", head.Flink, head.Blink);
         VA = (UINT64)head.Flink;
-    } while (VA != PsActiveProcessHead && VA != NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl);
-    return Status;
-}
-
-
-
-
-NTSTATUS WalkPageTableSelf(
-    _In_ UINT64 CR3,
-    _In_ UINT64 EPTP,
-    _In_ PVOID Buffer,
-    _In_ UINT64 BufferSize,
-    _Out_ UINT64& ReadBytes
-)
-{
-    UNREFERENCED_PARAMETER(Buffer);
-    UNREFERENCED_PARAMETER(BufferSize);
-
-    NTSTATUS Status = STATUS_UNSUCCESSFUL;
-    ReadBytes = 0;
-    UINT64 NtoskrnlGPA = 0;
-    UINT64 NtoskrnlGVA = 0;
-    if (!NT_SUCCESS(GetNtosBaseByEnumPageTable(CR3, EPTP, NtoskrnlGPA, NtoskrnlGVA)))
-    {
-        return Status;
-    }
-    MyDbgPrintEx("NtoskrnlGPA=%llx, NtoskrnlGVA=%llx", NtoskrnlGPA, NtoskrnlGVA);
-
-    WinRelatedData Offset = g_offset_1903_18363_Nt18362;
-    if (!NT_SUCCESS(PrintGuestProcessList(NtoskrnlGVA, Offset, CR3, EPTP)))
-    {
-        return Status;
-    }
+    } while (VA != PsActiveProcessHead && VA != NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl
+        && procCount * sizeof(ProcList) <= BufferSize);
+    ReturnLength = procCount * sizeof(ProcList);
     return Status;
 }
 

@@ -25,8 +25,15 @@ typedef struct _DEVICE_EXTENSION
 
 struct VMInfo
 {
-	UINT64 m_cr3;
-	UINT64 m_eptp;
+	UINT64 cr3;
+	UINT64 eptp;
+};
+
+struct ProcList
+{
+	UINT64 pid;
+	UINT64 cr3;
+	CHAR name[16];
 };
 
 extern UNICODE_STRING g_DeviceName;
@@ -43,7 +50,7 @@ extern PDEVICE_OBJECT g_vboxDeviceObject;
 #define IOCTL_READ_PHYSICAL_MEMORY \
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x701, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-#define IOCTL_ENUM_GVM_KERNEL_MEMORY \
+#define IOCTL_ENUM_GUEST_PROCESS_LIST \
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x702, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 

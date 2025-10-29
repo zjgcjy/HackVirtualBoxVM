@@ -13,6 +13,7 @@ extern "C"
 #endif // __cplusplus
 
 #include "aob.hpp"
+#include "global.hpp"
 
 #define PML4I_SHIFT     39
 #define PDPTI_SHIFT     30
@@ -205,14 +206,12 @@ NTSTATUS GetNtosBaseByEnumPageTable(
 );
 
 
-
-
-
-
-NTSTATUS WalkPageTableSelf(
+NTSTATUS GetGuestProcessList(
+    _In_ UINT64 NtoskrnlGVA,
+    _In_ WinRelatedData& Offset,
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
-    _In_ PVOID Buffer,
+    _Out_ ProcList* procBuffer,
     _In_ UINT64 BufferSize,
-    _Out_ UINT64& ReadBytes
+    _Out_ UINT64& ReturnLength
 );

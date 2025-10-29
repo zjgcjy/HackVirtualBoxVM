@@ -47,7 +47,7 @@ NTSTATUS IrpClose(
 
 
 
-NTSTATUS GetVMCpuInfo(
+NTSTATUS GetGuestVMInfo(
 	_Inout_ PVOID SystemBuffer,
 	_In_ ULONG InputBufferLength,
 	_In_ ULONG OutputBufferLength,
@@ -59,16 +59,15 @@ NTSTATUS GetVMCpuInfo(
 	UNREFERENCED_PARAMETER(OutputBufferLength);
 
 	VMInfo* Output = (VMInfo*)SystemBuffer;
+	ReturnLength = 0;
 
 	if (!SystemBuffer || OutputBufferLength < sizeof(VMInfo))
 	{
-		ReturnLength = 0;
 		return STATUS_INVALID_PARAMETER;
 	}
 	NTSTATUS Status = IoGetDeviceObjectPointer(&g_vboxDeviceName, FILE_ALL_ACCESS, &g_vboxFileObject, &g_vboxDeviceObject);
 	if (!NT_SUCCESS(Status))
 	{
-		ReturnLength = 0;
 		return Status;
 	}
 
@@ -80,18 +79,18 @@ NTSTATUS GetVMCpuInfo(
 		{
 			continue;
 		}
-		MyDbgPrint("Find VM Session, VM pid maybe in [%d, %d, %d]\n", i, i + 0x1fff, i + 0x1fff + 0x1fff);
+		MyDbgPrintEx("Find VM Session, VM pid maybe in [%d, %d, %d]\n", i, i + 0x1fff, i + 0x1fff + 0x1fff);
 		PVOID pSessionGVM = *(PVOID*)((UCHAR*)apSessionHashTab + g_offset_pSessionGVM_SUPDRVSESSION);
 		if (!pSessionGVM)
 		{
 			continue;
 		}
 		DWORD CpuNumber = *(DWORD*)((UCHAR*)pSessionGVM + g_offset_cCpus_GVM);
-		MyDbgPrint("pSessionGVM=%llx, CpuNumber=%d\n", pSessionGVM, CpuNumber);
+		MyDbgPrintEx("pSessionGVM=%llx, CpuNumber=%d\n", pSessionGVM, CpuNumber);
 		for (size_t cpuid = 0; cpuid < CpuNumber; cpuid++)
 		{
 			PVOID GvmCPU = (PVOID)((UCHAR*)pSessionGVM + g_offset_aCpus_GVM + cpuid * g_size_GVMCPU);
-			// MyDbgPrint("guest cpu[%d] GvmCPU=%llx\n", cpuid, GvmCPU);
+			// MyDbgPrintEx("guest cpu[%d] GvmCPU=%llx\n", cpuid, GvmCPU);
 			UINT64 cr3 = *(UINT64*)((UCHAR*)GvmCPU + g_offset_GstCtx_VMCPU + g_offset_cr3_CPUMCTX);
 			PVOID pShwPageCR3R0 = *(PVOID*)((UCHAR*)GvmCPU + g_offset_eptp_VMCPU);
 			if (!pShwPageCR3R0)
@@ -99,9 +98,9 @@ NTSTATUS GetVMCpuInfo(
 				continue;
 			}
 			UINT64 eptp = *(UINT64*)pShwPageCR3R0;
-			MyDbgPrint("guest cpu[%d] cr3=%llx eptp=%llx\n", cpuid, cr3, eptp);
-			Output->m_cr3 = cr3;
-			Output->m_eptp = eptp;
+			MyDbgPrintEx("guest cpu[%d] cr3=%llx eptp=%llx\n", cpuid, cr3, eptp);
+			Output->cr3 = cr3;
+			Output->eptp = eptp;
 			ReturnLength = sizeof(VMInfo);
 			break;
 		}
@@ -130,19 +129,19 @@ NTSTATUS GetPhysicalMem(
 	UNREFERENCED_PARAMETER(OutputBufferLength);
 
 	VMInfo* Input = (VMInfo*)SystemBuffer;
+	ReturnLength = 0;
 	if (!SystemBuffer || InputBufferLength < sizeof(VMInfo))
 	{
-		ReturnLength = 0;
 		return STATUS_INVALID_PARAMETER;
 	}
 
-	UINT64 cr3 = Input->m_cr3;
-	UINT64 eptp = Input->m_eptp;
+	UINT64 cr3 = Input->cr3;
+	UINT64 eptp = Input->eptp;
 
 	return ReadGPA(cr3, eptp, SystemBuffer, OutputBufferLength, ReturnLength);
 }
 
-NTSTATUS EnumKernelMemory(
+NTSTATUS GetGuestProcessList(
 	_Inout_ PVOID SystemBuffer,
 	_In_ ULONG InputBufferLength,
 	_In_ ULONG OutputBufferLength,
@@ -154,16 +153,32 @@ NTSTATUS EnumKernelMemory(
 	UNREFERENCED_PARAMETER(OutputBufferLength);
 
 	VMInfo* Input = (VMInfo*)SystemBuffer;
+	ReturnLength = 0;
 	if (!SystemBuffer || InputBufferLength < sizeof(VMInfo))
 	{
-		ReturnLength = 0;
 		return STATUS_INVALID_PARAMETER;
 	}
 
-	UINT64 cr3 = Input->m_cr3;
-	UINT64 eptp = Input->m_eptp;
-	return WalkPageTableSelf(cr3, eptp, SystemBuffer, OutputBufferLength, ReturnLength);
+	UINT64 cr3 = Input->cr3;
+	UINT64 eptp = Input->eptp;
+	ProcList* procBuffer = (ProcList*) SystemBuffer;
 
+	UINT64 NtoskrnlGPA = 0;
+	UINT64 NtoskrnlGVA = 0;
+	NTSTATUS Status = GetNtosBaseByEnumPageTable(cr3, eptp, NtoskrnlGPA, NtoskrnlGVA);
+	if (!NT_SUCCESS(Status))
+	{
+		return Status;
+	}
+	MyDbgPrintEx("NtoskrnlGPA=%llx, NtoskrnlGVA=%llx", NtoskrnlGPA, NtoskrnlGVA);
+
+	WinRelatedData Offset = g_offset_1903_18363_Nt18362;
+	Status = GetGuestProcessList(NtoskrnlGVA, Offset, cr3, eptp, procBuffer, OutputBufferLength, ReturnLength);
+	if (!NT_SUCCESS(Status))
+	{
+		return Status;
+	}
+	return Status;
 }
 
 NTSTATUS IrpIoctl(
@@ -185,7 +200,7 @@ NTSTATUS IrpIoctl(
 	{
 		case IOCTL_ENUM_SESSION_LIST:
 		{
-			Status = GetVMCpuInfo(Buffer, InputLength, OutputLength, ReturnLength);
+			Status = GetGuestVMInfo(Buffer, InputLength, OutputLength, ReturnLength);
 			break;
 		}
 		case IOCTL_READ_PHYSICAL_MEMORY:
@@ -193,9 +208,9 @@ NTSTATUS IrpIoctl(
 			Status = GetPhysicalMem(Buffer, InputLength, OutputLength, ReturnLength);
 			break;
 		}
-		case IOCTL_ENUM_GVM_KERNEL_MEMORY:
+		case IOCTL_ENUM_GUEST_PROCESS_LIST:
 		{
-			Status = EnumKernelMemory(Buffer, InputLength, OutputLength, ReturnLength);
+			Status = GetGuestProcessList(Buffer, InputLength, OutputLength, ReturnLength);
 			break;
 		}
 		default:
@@ -216,7 +231,7 @@ VOID NtDriverUnload(
 	_In_ PDRIVER_OBJECT DriverObject
 )
 {
-	MyDbgPrint("Start NtDriverUnload\n");
+	MyDbgPrintEx("Start NtDriverUnload\n");
 	// delete device and symlink
 	PDEVICE_OBJECT DeviceObject = DriverObject->DeviceObject;
 	while (DeviceObject != NULL)
@@ -227,7 +242,7 @@ VOID NtDriverUnload(
 		DeviceObject = DeviceObject->NextDevice;
 		IoDeleteDevice(DeviceExtension->DeviceObject);
 	}
-	MyDbgPrint("End NtDriverUnload\n");
+	MyDbgPrintEx("End NtDriverUnload\n");
 }
 
 NTSTATUS NtDriverCreateDevice(
@@ -264,7 +279,7 @@ EXTERN_C NTSTATUS DriverEntry(
 {
 	UNREFERENCED_PARAMETER(DriverObject);
 	UNREFERENCED_PARAMETER(RegistyPath);
-	MyDbgPrint("Start DriverEntry\n");
+	MyDbgPrintEx("Start DriverEntry\n");
 
 	DriverObject->MajorFunction[IRP_MJ_CREATE] = IrpCreate;
 	DriverObject->MajorFunction[IRP_MJ_CLOSE] = IrpClose;
@@ -274,6 +289,7 @@ EXTERN_C NTSTATUS DriverEntry(
 	NTSTATUS status = NtDriverCreateDevice(DriverObject);
 
 
-	MyDbgPrint("End DriverEntry\n");
+	MyDbgPrintEx("End DriverEntry\n");
 	return status;
 }
+
