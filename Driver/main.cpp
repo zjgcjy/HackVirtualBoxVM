@@ -17,9 +17,10 @@ extern "C"
 }
 #endif // __cplusplus
 
-#include "mm.hpp"
 #include "aob.hpp"
 #include "global.hpp"
+#include "mm.hpp"
+#include "vad.hpp"
 
 NTSTATUS IrpCreate(
 	_In_ PDEVICE_OBJECT DeviceObject,
@@ -181,6 +182,49 @@ NTSTATUS GetGuestProcessList(
 	return Status;
 }
 
+
+NTSTATUS GetProcVadList(
+	_Inout_ PVOID SystemBuffer,
+	_In_ ULONG InputBufferLength,
+	_In_ ULONG OutputBufferLength,
+	_Out_ UINT64& ReturnLength
+)
+{
+	UNREFERENCED_PARAMETER(SystemBuffer);
+	UNREFERENCED_PARAMETER(InputBufferLength);
+	UNREFERENCED_PARAMETER(OutputBufferLength);
+
+	ProcList* Input = (ProcList*)SystemBuffer;
+	ReturnLength = 0;
+	if (!SystemBuffer || InputBufferLength < sizeof(VMInfo))
+	{
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	UINT64 cr3 = Input->cr3;
+	UINT64 eptp = Input->eptp;
+	PEPROCESS Process= (PEPROCESS)Input->eprocess;
+	UINT64 ReadBytes = 0;
+
+	PVOID Root = NULL;
+	WinRelatedData Offset = g_offset_1903_18363_Nt18362;
+	NTSTATUS Status = ReadGVA((UINT64)((PCHAR)Process + Offset.VadRoot_EPROCESS), cr3, eptp, &Root, sizeof(Root), ReadBytes);
+	if (!NT_SUCCESS(Status))
+	{
+		return Status;
+	}
+	MyDbgPrintEx("VadRoot=%p", Root);
+	Status = EnumVadTree(cr3, eptp, Root);
+	if (!NT_SUCCESS(Status))
+	{
+		return Status;
+	}
+
+
+
+	return Status;
+}
+
 NTSTATUS IrpIoctl(
 	_In_ PDEVICE_OBJECT DeviceObject,
 	_Inout_ PIRP Irp
@@ -211,6 +255,11 @@ NTSTATUS IrpIoctl(
 		case IOCTL_ENUM_GUEST_PROCESS_LIST:
 		{
 			Status = GetGuestProcessList(Buffer, InputLength, OutputLength, ReturnLength);
+			break;
+		}
+		case IOCTL_ENUM_GUEST_PROC_VAD_LIST:
+		{
+			Status = GetProcVadList(Buffer, InputLength, OutputLength, ReturnLength);
 			break;
 		}
 		default:

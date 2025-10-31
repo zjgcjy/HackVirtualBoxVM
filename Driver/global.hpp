@@ -31,8 +31,10 @@ struct VMInfo
 
 struct ProcList
 {
-	UINT64 pid;
 	UINT64 cr3;
+	UINT64 eptp;
+	PVOID eprocess;
+	UINT64 pid;
 	CHAR name[16];
 };
 
@@ -52,6 +54,9 @@ extern PDEVICE_OBJECT g_vboxDeviceObject;
 
 #define IOCTL_ENUM_GUEST_PROCESS_LIST \
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x702, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_ENUM_GUEST_PROC_VAD_LIST \
+		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x703, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 
 typedef NTSTATUS(*fpMmCopyMemory)(PVOID TargetAddress, MM_COPY_ADDRESS SourceAddress, SIZE_T NumberOfBytes, ULONG Flags, PSIZE_T NumberOfBytesTransferred);
@@ -78,6 +83,7 @@ struct WinRelatedData {
 	int ActiveProcessLinks_EPROCESS;	// dt _EPROCESS ActiveProcessLinks
 	int ImageFileName_EPROCESS;	// dt _EPROCESS ImageFileName
 	int DirectoryTableBase_KPROCESS;	// dt _KPROCESS DirectoryTableBase
+	int VadRoot_EPROCESS;	// dt _EPROCESS VadRoot
 };
 
 extern WinRelatedData g_offset_1903_18363_Nt18362;

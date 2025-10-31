@@ -94,11 +94,13 @@
     <ClCompile Include="global.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mm.cpp" />
+    <ClCompile Include="vad.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="aob.hpp" />
     <ClInclude Include="global.hpp" />
     <ClInclude Include="mm.hpp" />
+    <ClInclude Include="vad.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

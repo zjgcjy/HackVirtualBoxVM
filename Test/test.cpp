@@ -14,6 +14,9 @@
 #define IOCTL_ENUM_GUEST_PROCESS_LIST \
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x702, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_ENUM_GUEST_PROC_VAD_LIST \
+		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x703, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 struct VMInfo
 {
 	UINT64 cr3;
@@ -22,8 +25,10 @@ struct VMInfo
 
 struct ProcList
 {
-	UINT64 pid;
 	UINT64 cr3;
+	UINT64 eptp;
+	PVOID eprocess;
+	UINT64 pid;
 	CHAR name[16];
 };
 
@@ -60,7 +65,7 @@ int TestParsePageTable(HANDLE& Handle, VMInfo& info)
 	return 1;
 }
 
-int TestEnumKernelMem(HANDLE& Handle, VMInfo& info, ProcList& proc)
+int TestEnumKernelMem(const char *target, HANDLE& Handle, VMInfo& info, ProcList& proc)
 {
 	std::vector<ProcList> procList(1024);
 	DWORD retLength = 0;
@@ -76,13 +81,27 @@ int TestEnumKernelMem(HANDLE& Handle, VMInfo& info, ProcList& proc)
 	for (std::vector<ProcList>::iterator it = procList.begin(); it != procList.end(); it++)
 	{
 		// std::cout << "pid=" << std::hex << it->pid << ", cr3=" << it->cr3 << std::dec << ", name=" << it->name << std::endl;
-		if (!strcmp(it->name, "notepad.exe"))
+		if (!strcmp(it->name, target))
 		{
 			proc.cr3 = it->cr3;
+			proc.eptp = info.eptp;
 			proc.pid = it->pid;
-			memcmp(proc.name, it->name, sizeof(proc.name));
+			proc.eprocess = it->eprocess;
+			memcpy(proc.name, it->name, sizeof(proc.name));
 			return 1;
 		}
+	}
+	return 0;
+}
+
+int TestProcVadTree(HANDLE& Handle, ProcList& proc)
+{
+	DWORD retLength = 0;
+	BOOL ret = DeviceIoControl(Handle, IOCTL_ENUM_GUEST_PROC_VAD_LIST, &proc, sizeof(proc), NULL, 0, &retLength, NULL);
+	if (!ret)
+	{
+		std::cout << "DeviceIoControl error=" << GetLastError() << std::endl;
+		return 0;
 	}
 	return 0;
 }
@@ -97,22 +116,23 @@ int main()
 		return -1;
 	}
 	VMInfo info = { 0 };
-
 	if (!TestParsePageTable(Handle, info))
 	{
 		CloseHandle(Handle);
 		return -1;
 	}
 	ProcList proc = { 0 };
-	if (!TestEnumKernelMem(Handle, info, proc))
+	if (!TestEnumKernelMem("notepad.exe", Handle, info, proc))
 	{
 		CloseHandle(Handle);
 		return -1;
 	}
-	std::cout << "notepad pid=" << std::hex << proc.pid << ", cr3=" << proc.cr3 << std::dec << std::endl;
-
-
-
+	std::cout << "notepad pid=" << std::hex << proc.pid << ", cr3=" << proc.cr3 << ", eprocess=" << proc.eprocess << std::dec << ", name=" << proc.name << std::endl;
+	if (!TestProcVadTree(Handle, proc))
+	{
+		CloseHandle(Handle);
+		return -1;
+	}
 
 
 	CloseHandle(Handle);

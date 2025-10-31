@@ -330,7 +330,6 @@ NTSTATUS GetNtosBaseByEnumPageTable(
     return Status;
 }
 
-
 NTSTATUS GetGuestProcessList(
     _In_ UINT64 NtoskrnlGVA,
     _In_ WinRelatedData& Offset,
@@ -380,9 +379,9 @@ NTSTATUS GetGuestProcessList(
             return Status;
         }
 
-        //MyDbgPrintEx("VA=%p, Process=%p", VA, Process);
-        MyDbgPrintEx("pid=%llx, cr3=%llx, name=%s", Proc_pid, Proc_cr3, Proc_name);
+        MyDbgPrintEx("VA=%p, Process=%p, pid=%llx, cr3=%llx, name=%s", VA, Process, Proc_pid, Proc_cr3, Proc_name);
         procCount += 1;
+        procBuffer->eprocess = Process;
         procBuffer->cr3 = Proc_cr3;
         procBuffer->pid = Proc_pid;
         memcpy(procBuffer->name, Proc_name, 15);

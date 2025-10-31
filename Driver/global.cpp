@@ -23,7 +23,7 @@ const int g_offset_cr3_CPUMCTX = 0x170;		// CPUMGetGuestCR3
 const int g_offset_eptp_VMCPU = 0x311d8;		// PGMGetHyperCR3	vmxHCExportGuestCR3AndCR4
 
 
-WinRelatedData g_offset_1903_18363_Nt18362 = { 0x438b40, 0x2e8, 0x2f0, 0x450, 0x28};
+WinRelatedData g_offset_1903_18363_Nt18362 = { 0x438b40, 0x2e8, 0x2f0, 0x450, 0x28, 0x658};
 
 
 VOID NTAPI MyDbgPrint(

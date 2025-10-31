@@ -31,6 +31,9 @@
     <ClCompile Include="aob.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="vad.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="mm.hpp">
@@ -40,6 +43,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="global.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vad.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
