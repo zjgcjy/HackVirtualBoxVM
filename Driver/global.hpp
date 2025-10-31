@@ -29,7 +29,7 @@ struct VMInfo
 	UINT64 eptp;
 };
 
-struct ProcList
+struct ProcBasicInfo
 {
 	UINT64 cr3;
 	UINT64 eptp;
@@ -37,6 +37,18 @@ struct ProcList
 	UINT64 pid;
 	CHAR name[16];
 };
+
+struct ProcVadInfo
+{
+	UINT64 startpfn;
+	UINT64 endingpfn;
+	UINT64 level;
+	UINT64 protection;
+	UINT64 vadtype;
+	UINT64 commitsize;
+	UINT64 isprivate;
+};
+
 
 extern UNICODE_STRING g_DeviceName;
 extern UNICODE_STRING g_SymLinkName;

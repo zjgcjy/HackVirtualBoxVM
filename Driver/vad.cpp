@@ -7,50 +7,94 @@ VOID EnumVad(
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
     _In_ PVOID Addr,
-    _Out_ UINT64 &Count,
-    _In_ UINT64 Level
+    _Inout_ UINT64 &Count,
+    _In_ UINT64 Level,
+    _Inout_ ProcVadInfo* &Buffer,
+    _In_ UINT64 BufferSize
 )
 {
-    if (Addr == 0)
+    if (Addr == 0 || !Buffer)
     {
         return;
     }
     UINT64 ReadBytes = 0;
-    RTL_BALANCED_NODE node = { 0 };
-    NTSTATUS Status = ReadGVA((UINT64)Addr, CR3, EPTP, &node, sizeof(node), ReadBytes);
+    BYTE temp[0x100] = { 0 };
+    MMVAD_SHORT* vad = (MMVAD_SHORT*)temp;
+    RTL_BALANCED_NODE* node = &vad->VadNode;
+
+    NTSTATUS Status = ReadGVA((UINT64)Addr, CR3, EPTP, temp, sizeof(temp), ReadBytes);
     if (!NT_SUCCESS(Status))
     {
         return;
     }
     Count += 1;
-    MyDbgPrintEx("node=%p, left=%p, right=%p, count=%d, level=%d", Addr, node.Left, node.Right, Count, Level);
-    if (node.Left != 0)
+    if (Count * sizeof(ProcBasicInfo) > BufferSize)
     {
-        EnumVad(CR3, EPTP, node.Left, Count, Level + 1);
+        return;
     }
-    if (node.Right != 0)
+    UINT64 StartingVpn = (UINT64)vad->StartingVpnHigh << 32;
+    StartingVpn |= vad->StartingVpn;
+    UINT64 EndingVpn = (UINT64)vad->EndingVpnHigh << 32;
+    EndingVpn |= vad->EndingVpn;
+    EndingVpn += 1;
+
+    ULONG Protection = vad->u.VadFlags.Protection;
+    ULONG VadType = vad->u.VadFlags.VadType;
+    ULONG CommitCharge = vad->u1.VadFlags1.CommitCharge;
+    ULONG PrivateMemory = vad->u.VadFlags.PrivateMemory;
+
+    MyDbgPrintEx("node=%p, level=%d, start=%llx, end=%llx, Protection=%d, VadType=%d, Commit=%d, Private=%d", Addr, Level, StartingVpn, EndingVpn, Protection, VadType, CommitCharge, PrivateMemory);
+
+    Buffer->startpfn = StartingVpn;
+    Buffer->endingpfn = EndingVpn;
+    Buffer->level = Level;
+    Buffer->protection = Protection;
+    Buffer->vadtype = VadType;
+    Buffer->commitsize = CommitCharge;
+    Buffer->isprivate = PrivateMemory;
+    Buffer++;
+
+    if (node->Left != 0)
     {
-        EnumVad(CR3, EPTP, node.Right, Count, Level + 1);
+        EnumVad(CR3, EPTP, node->Left, Count, Level + 1, Buffer, BufferSize);
+    }
+    if (node->Right != 0)
+    {
+        EnumVad(CR3, EPTP, node->Right, Count, Level + 1, Buffer, BufferSize);
     }
     return;
 }
 
-
 NTSTATUS EnumVadTree(
+    _In_ WinRelatedData& Offset,
+    _In_ PEPROCESS Process,
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
-    _In_ PVOID VadRoot
-    //_Inout_ PVOID Buffer,
-    //_In_ UINT64 BufferSize,
-    //_Out_ UINT64& ReturnLength
+    _Inout_ ProcVadInfo* Buffer,
+    _In_ UINT64 BufferSize,
+    _Out_ UINT64& ReturnLength
 )
 {
-    //ReturnLength = 0;
-    if (!VadRoot)
+    ReturnLength = 0;
+    if (!Buffer)
+    {
+        return STATUS_INVALID_PARAMETER_1;
+    }
+    UINT64 ReadBytes = 0;
+    PVOID Root = NULL;
+    NTSTATUS Status = ReadGVA((UINT64)((PCHAR)Process + Offset.VadRoot_EPROCESS), CR3, EPTP, &Root, sizeof(Root), ReadBytes);
+    if (!NT_SUCCESS(Status))
+    {
+        return Status;
+    }
+    MyDbgPrintEx("VadRoot=%p", Root);
+    if (!Root)
     {
         return STATUS_UNSUCCESSFUL;
     }
     UINT64 count = 0;
-    EnumVad(CR3, EPTP, VadRoot, count, 0);
+    EnumVad(CR3, EPTP, Root, count, 0, Buffer, BufferSize);
+    MyDbgPrintEx("vad count=%d", count);
+    ReturnLength = count * sizeof(ProcVadInfo);
     return STATUS_SUCCESS;
 }

@@ -211,7 +211,7 @@ NTSTATUS GetGuestProcessList(
     _In_ WinRelatedData& Offset,
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
-    _Out_ ProcList* procBuffer,
+    _Out_ ProcBasicInfo* procBuffer,
     _In_ UINT64 BufferSize,
     _Out_ UINT64& ReturnLength
 );

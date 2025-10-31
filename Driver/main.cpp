@@ -162,7 +162,7 @@ NTSTATUS GetGuestProcessList(
 
 	UINT64 cr3 = Input->cr3;
 	UINT64 eptp = Input->eptp;
-	ProcList* procBuffer = (ProcList*) SystemBuffer;
+	ProcBasicInfo* procBuffer = (ProcBasicInfo*) SystemBuffer;
 
 	UINT64 NtoskrnlGPA = 0;
 	UINT64 NtoskrnlGVA = 0;
@@ -182,7 +182,6 @@ NTSTATUS GetGuestProcessList(
 	return Status;
 }
 
-
 NTSTATUS GetProcVadList(
 	_Inout_ PVOID SystemBuffer,
 	_In_ ULONG InputBufferLength,
@@ -194,34 +193,24 @@ NTSTATUS GetProcVadList(
 	UNREFERENCED_PARAMETER(InputBufferLength);
 	UNREFERENCED_PARAMETER(OutputBufferLength);
 
-	ProcList* Input = (ProcList*)SystemBuffer;
+	ProcBasicInfo* Input = (ProcBasicInfo*)SystemBuffer;
 	ReturnLength = 0;
-	if (!SystemBuffer || InputBufferLength < sizeof(VMInfo))
+	if (!SystemBuffer || InputBufferLength < sizeof(ProcBasicInfo))
 	{
 		return STATUS_INVALID_PARAMETER;
 	}
 
 	UINT64 cr3 = Input->cr3;
 	UINT64 eptp = Input->eptp;
-	PEPROCESS Process= (PEPROCESS)Input->eprocess;
-	UINT64 ReadBytes = 0;
+	PEPROCESS Process = (PEPROCESS)Input->eprocess;
+	ProcVadInfo* Buffer = (ProcVadInfo*)SystemBuffer;
 
-	PVOID Root = NULL;
 	WinRelatedData Offset = g_offset_1903_18363_Nt18362;
-	NTSTATUS Status = ReadGVA((UINT64)((PCHAR)Process + Offset.VadRoot_EPROCESS), cr3, eptp, &Root, sizeof(Root), ReadBytes);
+	NTSTATUS Status = EnumVadTree(Offset, Process, cr3, eptp, Buffer, OutputBufferLength, ReturnLength);
 	if (!NT_SUCCESS(Status))
 	{
 		return Status;
 	}
-	MyDbgPrintEx("VadRoot=%p", Root);
-	Status = EnumVadTree(cr3, eptp, Root);
-	if (!NT_SUCCESS(Status))
-	{
-		return Status;
-	}
-
-
-
 	return Status;
 }
 

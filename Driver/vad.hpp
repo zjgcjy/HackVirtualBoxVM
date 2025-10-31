@@ -43,7 +43,7 @@ struct _MMVAD_FLAGS
     ULONG NoChange : 1;                                                       //0x0
     ULONG VadType : 3;                                                        //0x0
     ULONG Protection : 5;                                                     //0x0
-    ULONG PreferredNode : 7;                                                  //0x0
+    ULONG PreferredNode : 6;                                                  //0x0
     ULONG PageSize : 2;                                                       //0x0
     ULONG PrivateMemory : 1;                                                  //0x0
 };
@@ -54,6 +54,14 @@ struct _MMVAD_FLAGS1
     ULONG CommitCharge : 31;                                                  //0x0
     ULONG MemCommit : 1;                                                      //0x0
 };
+
+#define MM_READONLY            1
+#define MM_EXECUTE             2
+#define MM_EXECUTE_READ        3
+#define MM_READWRITE           4  // bit 2 is set if this is writable.
+#define MM_WRITECOPY           5
+#define MM_EXECUTE_READWRITE   6
+#define MM_EXECUTE_WRITECOPY   7
 
 //0x4 bytes (sizeof)
 struct _MM_PRIVATE_VAD_FLAGS
@@ -118,16 +126,17 @@ typedef struct _MMVAD_SHORT
         ULONG LongFlags1;                                                   //0x34
         struct _MMVAD_FLAGS1 VadFlags1;                                     //0x34
     } u1;
-} MMVAD_SHORT, * PMMVAD_SHORT;
+} MMVAD_SHORT;
 
 
 
 NTSTATUS EnumVadTree(
+    _In_ WinRelatedData& Offset,
+    _In_ PEPROCESS Process,
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
-    _In_ PVOID VadRoot
-    //_Inout_ PVOID Buffer,
-    //_In_ UINT64 BufferSize,
-    //_Out_ UINT64& ReturnLength
+    _Inout_ ProcVadInfo* Buffer,
+    _In_ UINT64 BufferSize,
+    _Out_ UINT64& ReturnLength
 );
 

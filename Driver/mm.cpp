@@ -335,7 +335,7 @@ NTSTATUS GetGuestProcessList(
     _In_ WinRelatedData& Offset,
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
-    _Out_ ProcList* procBuffer,
+    _Out_ ProcBasicInfo* procBuffer,
     _In_ UINT64 BufferSize,
     _Out_ UINT64& ReturnLength
 )
@@ -394,8 +394,8 @@ NTSTATUS GetGuestProcessList(
         //MyDbgPrintEx("Flink=%p Blink=%p", head.Flink, head.Blink);
         VA = (UINT64)head.Flink;
     } while (VA != PsActiveProcessHead && VA != NtoskrnlGVA + Offset.PsActiveProcessHead_Ntoskrnl
-        && procCount * sizeof(ProcList) <= BufferSize);
-    ReturnLength = procCount * sizeof(ProcList);
+        && procCount * sizeof(ProcBasicInfo) <= BufferSize);
+    ReturnLength = procCount * sizeof(ProcBasicInfo);
     return Status;
 }
 
