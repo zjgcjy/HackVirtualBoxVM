@@ -104,3 +104,51 @@ BOOL IsGPANtoskrnlBase(
     }
     return Status;
 }
+
+
+BOOL IsGPAPeBase(
+    _In_ UINT64 GPA,
+    _In_ UINT64 EPTP,
+    _In_ SIZE_T Size
+)
+{
+    const ULONG tag = 'SMTG';
+    BOOL Status = FALSE;
+    PVOID Buffer = ExAllocatePoolZero(PagedPool, Size, tag);
+    if (Buffer == NULL || Size > PAGE_SIZE_1G)
+    {
+        return Status;
+    }
+    do
+    {
+        UINT64 RetBytes = 0;
+        if (!NT_SUCCESS(ReadGPA(GPA, EPTP, Buffer, Size, RetBytes)))
+        {
+            break;
+        }
+
+        SIZE_T Offset = 0;
+        // check pe dos
+        if (!AobSearcher((CHAR*)Buffer, Size, "\x4d\x5a\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff\x00\x00", "xxxxxxxxxxxxxxxx", Offset))
+        {
+            break;
+        }
+        PIMAGE_DOS_HEADER DosHeader = (PIMAGE_DOS_HEADER)Buffer;
+        if (Offset != 0 || DosHeader->e_magic != 'ZM' || DosHeader->e_lfanew >= Size)
+        {
+            break;
+        }
+        PIMAGE_NT_HEADERS NtHeader = (PIMAGE_NT_HEADERS)((PCHAR)Buffer + DosHeader->e_lfanew);
+        if (NtHeader->Signature != 'EP')
+        {
+            break;
+        }
+        Status = TRUE;
+    } while (FALSE);
+    if (Buffer)
+    {
+        ExFreePoolWithTag(Buffer, tag);
+        Buffer = NULL;
+    }
+    return Status;
+}

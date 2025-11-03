@@ -205,6 +205,12 @@ NTSTATUS GetNtosBaseByEnumPageTable(
     _Out_ UINT64& NtoskrnlGVA
 );
 
+NTSTATUS GetPeBaseByEnumPageTable(
+    _In_ UINT64 CR3,
+    _In_ UINT64 EPTP,
+    _In_ UINT64 va,
+    _In_ UINT64 va2
+);
 
 NTSTATUS GetGuestProcessList(
     _In_ UINT64 NtoskrnlGVA,

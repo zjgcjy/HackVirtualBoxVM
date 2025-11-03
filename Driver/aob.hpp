@@ -23,8 +23,13 @@ BOOL AobSearcher(
     _Out_ SIZE_T& Offset
 );
 
-
 BOOL IsGPANtoskrnlBase(
+    _In_ UINT64 GPA,
+    _In_ UINT64 EPTP,
+    _In_ SIZE_T Size
+);
+
+BOOL IsGPAPeBase(
     _In_ UINT64 GPA,
     _In_ UINT64 EPTP,
     _In_ SIZE_T Size

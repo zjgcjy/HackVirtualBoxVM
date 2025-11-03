@@ -46,8 +46,6 @@ NTSTATUS IrpClose(
 	return Status;
 }
 
-
-
 NTSTATUS GetGuestVMInfo(
 	_Inout_ PVOID SystemBuffer,
 	_In_ ULONG InputBufferLength,
@@ -214,6 +212,74 @@ NTSTATUS GetProcVadList(
 	return Status;
 }
 
+NTSTATUS IsGvaValid(
+	_Inout_ PVOID SystemBuffer,
+	_In_ ULONG InputBufferLength,
+	_In_ ULONG OutputBufferLength,
+	_Out_ UINT64& ReturnLength
+)
+{
+	UNREFERENCED_PARAMETER(SystemBuffer);
+	UNREFERENCED_PARAMETER(InputBufferLength);
+	UNREFERENCED_PARAMETER(OutputBufferLength);
+
+	ProcBasicInfo* Input = (ProcBasicInfo*)SystemBuffer;
+	ReturnLength = 0;
+	if (!SystemBuffer || InputBufferLength < sizeof(ProcBasicInfo))
+	{
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	UINT64 cr3 = Input->cr3;
+	UINT64 eptp = Input->eptp;
+	UINT64 gva = Input->va;
+
+	UINT64 gpa = 0;
+	MyDbgPrintEx("gva=%llx", gva);
+	
+	NTSTATUS Status = GVA2GPA(gva, cr3, eptp, gpa);
+	if (!NT_SUCCESS(Status))
+	{
+		ReturnLength = sizeof(UINT64);
+		*(UINT64*)SystemBuffer = 0;
+	}
+	ReturnLength = sizeof(UINT64);
+	*(UINT64*)SystemBuffer = 1;
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS GetGuestPeDllList(
+	_Inout_ PVOID SystemBuffer,
+	_In_ ULONG InputBufferLength,
+	_In_ ULONG OutputBufferLength,
+	_Out_ UINT64& ReturnLength
+)
+{
+	UNREFERENCED_PARAMETER(SystemBuffer);
+	UNREFERENCED_PARAMETER(InputBufferLength);
+	UNREFERENCED_PARAMETER(OutputBufferLength);
+
+	ProcBasicInfo* Input = (ProcBasicInfo*)SystemBuffer;
+	ReturnLength = 0;
+	if (!SystemBuffer || InputBufferLength < sizeof(VMInfo))
+	{
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	UINT64 cr3 = Input->cr3;
+	UINT64 eptp = Input->eptp;
+	UINT64 va = Input->va;
+	UINT64 va2 = Input->va2;
+
+	NTSTATUS Status = GetPeBaseByEnumPageTable(cr3, eptp, va, va2);
+	if (!NT_SUCCESS(Status))
+	{
+		return Status;
+	}
+	return Status;
+}
+
+
 NTSTATUS IrpIoctl(
 	_In_ PDEVICE_OBJECT DeviceObject,
 	_Inout_ PIRP Irp
@@ -249,6 +315,16 @@ NTSTATUS IrpIoctl(
 		case IOCTL_ENUM_GUEST_PROC_VAD_LIST:
 		{
 			Status = GetProcVadList(Buffer, InputLength, OutputLength, ReturnLength);
+			break;
+		}
+		case IOCTL_IS_GVA_VALID:
+		{
+			Status = IsGvaValid(Buffer, InputLength, OutputLength, ReturnLength);
+			break;
+		}
+		case IOCTL_ENUM_USER_MEM_PE_LIST:
+		{
+			Status = GetGuestPeDllList(Buffer, InputLength, OutputLength, ReturnLength);
 			break;
 		}
 		default:
@@ -330,4 +406,5 @@ EXTERN_C NTSTATUS DriverEntry(
 	MyDbgPrintEx("End DriverEntry\n");
 	return status;
 }
+
 

@@ -330,6 +330,125 @@ NTSTATUS GetNtosBaseByEnumPageTable(
     return Status;
 }
 
+NTSTATUS GetPeBaseByEnumPageTable(
+    _In_ UINT64 CR3,
+    _In_ UINT64 EPTP,
+    _In_ UINT64 va,
+    _In_ UINT64 va2
+)
+{
+    UINT64 VA = va;
+    UINT64 VA_End = g_KernelSpaceBase < va2 ? g_KernelSpaceBase : va2;
+
+    UINT64 Pml4i = (VA >> PML4I_SHIFT) & 0x1FF;
+    UINT64 Pdpti = (VA >> PDPTI_SHIFT) & 0x1FF;
+    UINT64 Pdi = (VA >> PDI_SHIFT) & 0x1FF;
+    UINT64 Pti = (VA >> PTI_SHIFT) & 0x1FF;
+
+    PML4E Pml4[PAGE_ENTRY_NUM] = { 0 };
+    PDPTE Pdpt[PAGE_ENTRY_NUM] = { 0 };
+    PDE Pd[PAGE_ENTRY_NUM] = { 0 };
+    PTE Pt[PAGE_ENTRY_NUM] = { 0 };
+
+    CR3 &= ~0xFFF;
+    UINT64 ReadBytes = 0;
+    NTSTATUS Status = ReadGPA(CR3, EPTP, &Pml4, sizeof(Pml4), ReadBytes);
+    if (!NT_SUCCESS(Status))
+    {
+        MyDbgPrintEx("Pml4=%llx is invalid", CR3);
+        return Status;
+    }
+    for (; VA < VA_End && Pml4i < PAGE_ENTRY_NUM; Pml4i++)
+    {
+        if (!Pml4[Pml4i].s.Present)
+        {
+            VA += PAGE_SIZE_512G;
+            Pdpti = Pdi = Pti = 0;
+            continue;
+        }
+        Status = ReadGPA(GET_4K_PFN_PAGE(Pml4[Pml4i].s.PageFrameNumber), EPTP, &Pdpt, sizeof(Pdpt), ReadBytes);
+        if (!NT_SUCCESS(Status))
+        {
+            MyDbgPrintEx("Pdpt=%llx is invalid", GET_4K_PFN_PAGE(Pml4[Pml4i].s.PageFrameNumber));
+            return Status;
+        }
+        for (; VA < VA_End && Pdpti < PAGE_ENTRY_NUM; Pdpti++)
+        {
+            if (!Pdpt[Pdpti].s.Present)
+            {
+                VA += PAGE_SIZE_1G;
+                Pdi = Pti = 0;
+                continue;
+            }
+            if (!Pdpt[Pdpti].s.LargePage)
+            {
+                Status = ReadGPA(GET_4K_PFN_PAGE(Pdpt[Pdpti].s.PageFrameNumber), EPTP, &Pd, sizeof(Pd), ReadBytes);
+                if (!NT_SUCCESS(Status))
+                {
+                    MyDbgPrintEx("Pdt=%llx is invalid", GET_4K_PFN_PAGE(Pdpt[Pdpti].s.PageFrameNumber));
+                    return Status;
+                }
+                for (; VA < VA_End && Pdi < PAGE_ENTRY_NUM; Pdi++)
+                {
+                    if (!Pd[Pdi].s.Present)
+                    {
+                        VA += PAGE_SIZE_2M;
+                        Pti = 0;
+                        continue;
+                    }
+                    if (!Pd[Pdi].s.LargePage)
+                    {
+                        Status = ReadGPA(GET_4K_PFN_PAGE(Pd[Pdi].s.PageFrameNumber), EPTP, &Pt, sizeof(Pt), ReadBytes);
+                        if (!NT_SUCCESS(Status))
+                        {
+                            MyDbgPrintEx("Pt=%llx is invalid", GET_4K_PFN_PAGE(Pd[Pdi].s.PageFrameNumber));
+                            return Status;
+                        }
+                        for (; VA < VA_End && Pti < PAGE_ENTRY_NUM; Pti++)
+                        {
+                            if (!Pt[Pti].s.Present)
+                            {
+                                VA += PAGE_SIZE_4K;
+                                continue;
+                            }
+                            // read
+                            if (IsGPAPeBase(GET_4K_PFN_PAGE(Pt[Pti].s.PageFrameNumber), EPTP, PAGE_SIZE_4K))
+                            {
+                                MyDbgPrintEx("va=%llx", VA);
+                            }
+                            VA += PAGE_SIZE_4K;
+                        }
+                    }
+                    else
+                    {
+                        // read
+                        PDE_LARGE* Pde_l = (PDE_LARGE*)&Pd[Pdi];
+                        if (IsGPAPeBase(GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber), EPTP, PAGE_SIZE_2M))
+                        {
+                            MyDbgPrintEx("va=%llx", VA);
+                        }
+                        VA += PAGE_SIZE_2M;
+                    }
+                    Pti = 0;
+                }
+            }
+            else
+            {
+                // read
+                PDPTE_LARGE* Pdpte_l = (PDPTE_LARGE*)&Pdpt[Pdpti];
+                if (IsGPAPeBase(GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber), EPTP, PAGE_SIZE_1G))
+                {
+                    MyDbgPrintEx("va=%llx", VA);
+                }
+                VA += PAGE_SIZE_1G;
+            }
+            Pdi = Pti = 0;
+        }
+        Pdpti = Pdi = Pti = 0;
+    }
+    return Status;
+}
+
 NTSTATUS GetGuestProcessList(
     _In_ UINT64 NtoskrnlGVA,
     _In_ WinRelatedData& Offset,

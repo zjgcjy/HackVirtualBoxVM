@@ -55,6 +55,7 @@ struct _MMVAD_FLAGS1
     ULONG MemCommit : 1;                                                      //0x0
 };
 
+#define MM_ZERO_ACCESS         0  // this value is not used.
 #define MM_READONLY            1
 #define MM_EXECUTE             2
 #define MM_EXECUTE_READ        3
@@ -129,10 +130,19 @@ typedef struct _MMVAD_SHORT
 } MMVAD_SHORT;
 
 
+VOID EnumVad(
+    _In_ UINT64 CR3,
+    _In_ UINT64 EPTP,
+    _In_ PVOID Addr,
+    _Inout_ UINT64& Count,
+    _In_ UINT64 Level,
+    _Inout_ ProcVadInfo*& Buffer,
+    _In_ UINT64 BufferSize
+);
 
 NTSTATUS EnumVadTree(
-    _In_ WinRelatedData& Offset,
-    _In_ PEPROCESS Process,
+    _In_ const WinRelatedData& Offset,
+    _In_ const PEPROCESS Process,
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
     _Inout_ ProcVadInfo* Buffer,

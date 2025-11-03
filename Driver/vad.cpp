@@ -9,11 +9,11 @@ VOID EnumVad(
     _In_ PVOID Addr,
     _Inout_ UINT64 &Count,
     _In_ UINT64 Level,
-    _Inout_ ProcVadInfo* &Buffer,
+    _Inout_ ProcVadInfo*& Buffer,
     _In_ UINT64 BufferSize
 )
 {
-    if (Addr == 0 || !Buffer)
+    if (!Addr || !Buffer)
     {
         return;
     }
@@ -66,8 +66,8 @@ VOID EnumVad(
 }
 
 NTSTATUS EnumVadTree(
-    _In_ WinRelatedData& Offset,
-    _In_ PEPROCESS Process,
+    _In_ const WinRelatedData& Offset,
+    _In_ const PEPROCESS Process,
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
     _Inout_ ProcVadInfo* Buffer,
@@ -76,7 +76,7 @@ NTSTATUS EnumVadTree(
 )
 {
     ReturnLength = 0;
-    if (!Buffer)
+    if (!Buffer || !Process)
     {
         return STATUS_INVALID_PARAMETER_1;
     }
@@ -87,14 +87,16 @@ NTSTATUS EnumVadTree(
     {
         return Status;
     }
-    MyDbgPrintEx("VadRoot=%p", Root);
     if (!Root)
     {
         return STATUS_UNSUCCESSFUL;
     }
+
+    MyDbgPrintEx("VadRoot=%p", Root);
     UINT64 count = 0;
     EnumVad(CR3, EPTP, Root, count, 0, Buffer, BufferSize);
-    MyDbgPrintEx("vad count=%d", count);
+    MyDbgPrintEx("Vad Count=%d", count);
     ReturnLength = count * sizeof(ProcVadInfo);
     return STATUS_SUCCESS;
 }
+

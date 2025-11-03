@@ -36,7 +36,10 @@ struct ProcBasicInfo
 	PVOID eprocess;
 	UINT64 pid;
 	CHAR name[16];
+	UINT64 va;		// for test from r3 to r0
+	UINT64 va2;		// for test from r3 to r0
 };
+
 
 struct ProcVadInfo
 {
@@ -50,14 +53,6 @@ struct ProcVadInfo
 };
 
 
-extern UNICODE_STRING g_DeviceName;
-extern UNICODE_STRING g_SymLinkName;
-
-
-extern UNICODE_STRING g_vboxDeviceName;
-extern PFILE_OBJECT g_vboxFileObject;
-extern PDEVICE_OBJECT g_vboxDeviceObject;
-
 #define IOCTL_ENUM_SESSION_LIST \
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x700, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
@@ -70,21 +65,34 @@ extern PDEVICE_OBJECT g_vboxDeviceObject;
 #define IOCTL_ENUM_GUEST_PROC_VAD_LIST \
 		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x703, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+#define IOCTL_IS_GVA_VALID \
+		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x704, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_ENUM_USER_MEM_PE_LIST \
+		CTL_CODE(FILE_DEVICE_UNKNOWN, 0x705, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+
+extern UNICODE_STRING g_DeviceName;
+extern UNICODE_STRING g_SymLinkName;
+
+extern UNICODE_STRING g_vboxDeviceName;
+extern PFILE_OBJECT g_vboxFileObject;
+extern PDEVICE_OBJECT g_vboxDeviceObject;
 
 typedef NTSTATUS(*fpMmCopyMemory)(PVOID TargetAddress, MM_COPY_ADDRESS SourceAddress, SIZE_T NumberOfBytes, ULONG Flags, PSIZE_T NumberOfBytesTransferred);
 
 extern fpMmCopyMemory g_MmCopyMemory;
 
 extern const UINT64 g_KernelSpaceBase;
-extern const UINT64 g_KernelModulesMappingBase;   // VmmWinInit_FindNtosScan64
-extern const UINT64 g_KernelModulesMappingEnd;    // 32G
+extern const UINT64 g_KernelModulesMappingBase;		// VmmWinInit_FindNtosScan64
+extern const UINT64 g_KernelModulesMappingEnd;		// 32G
 
 extern const int g_offset_apSessionHashTab_SUPDRVDEVEXT;	// supdrvSessionHashTabLookup
 extern const int g_offset_pSessionGVM_SUPDRVSESSION;
 extern const int g_offset_cCpus_GVM;		// GVMMR0RegisterVCpu
 extern const int g_offset_aCpus_GVM;		// GMMR0AllocateLargePage
 extern const int g_size_GVMCPU;
-extern const int g_offset_GstCtx_VMCPU;	// CPUMGetGuestEAX
+extern const int g_offset_GstCtx_VMCPU;		// CPUMGetGuestEAX
 extern const int g_offset_cr3_CPUMCTX;		// CPUMGetGuestCR3
 extern const int g_offset_eptp_VMCPU;		// PGMGetHyperCR3	vmxHCExportGuestCR3AndCR4
 
@@ -108,4 +116,5 @@ VOID NTAPI MyDbgPrint(
 
 #define MyDbgPrintEx(fmt, ...) \
     MyDbgPrint("%s(%d): " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+
 
