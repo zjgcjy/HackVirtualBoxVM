@@ -5,8 +5,9 @@ Read VM mem on host os.
 > Test only on
 
 - virtualbox: 7.7.2
-- guest os: windows 10 1903 ver18363
-- ntoskrnl.exe: 10.0.18362.418
+- guest os:
+    - windows 10 1903 version 18363
+    - ntoskrnl.exe `10.0.18362.418`
 
 ## 定位 guest 的 eptp 和 cpu 的 cr3
 
@@ -24,3 +25,8 @@ Read VM mem on host os.
 
 ![](./assert/p4.png)
 
+
+# todo
+
+- protocol pte 解析
+- 多版本支持
