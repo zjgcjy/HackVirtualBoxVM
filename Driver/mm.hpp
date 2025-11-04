@@ -209,7 +209,10 @@ NTSTATUS GetPeBaseByEnumPageTable(
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
     _In_ UINT64 va,
-    _In_ UINT64 va2
+    _In_ UINT64 va2,
+    _Inout_ UINT64* Buffer,
+    _In_ UINT64 BufferSize,
+    _Out_ UINT64& ReturnLength
 );
 
 NTSTATUS GetGuestProcessList(

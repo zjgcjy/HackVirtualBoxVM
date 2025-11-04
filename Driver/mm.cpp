@@ -334,11 +334,20 @@ NTSTATUS GetPeBaseByEnumPageTable(
     _In_ UINT64 CR3,
     _In_ UINT64 EPTP,
     _In_ UINT64 va,
-    _In_ UINT64 va2
+    _In_ UINT64 va2,
+    _Inout_ UINT64* Buffer,
+    _In_ UINT64 BufferSize,
+    _Out_ UINT64& ReturnLength
 )
 {
+    UNREFERENCED_PARAMETER(va2);
+    ReturnLength = 0;
+    if (!Buffer)
+    {
+        return STATUS_INVALID_PARAMETER_1;
+    }
     UINT64 VA = va;
-    UINT64 VA_End = g_KernelSpaceBase < va2 ? g_KernelSpaceBase : va2;
+    UINT64 VA_End = g_UserSpaceEnd; // g_UserSpaceEnd < va2 ? g_KernelSpaceBase : va2;
 
     UINT64 Pml4i = (VA >> PML4I_SHIFT) & 0x1FF;
     UINT64 Pdpti = (VA >> PDPTI_SHIFT) & 0x1FF;
@@ -414,7 +423,14 @@ NTSTATUS GetPeBaseByEnumPageTable(
                             // read
                             if (IsGPAPeBase(GET_4K_PFN_PAGE(Pt[Pti].s.PageFrameNumber), EPTP, PAGE_SIZE_4K))
                             {
-                                MyDbgPrintEx("va=%llx", VA);
+                                MyDbgPrintEx("pe va=%llx", VA);
+                                if (BufferSize >= sizeof(*Buffer))
+                                {
+                                    *Buffer = VA;
+                                    Buffer++;
+                                    BufferSize -= sizeof(*Buffer);
+                                    ReturnLength += sizeof(*Buffer);
+                                }
                             }
                             VA += PAGE_SIZE_4K;
                         }
@@ -425,7 +441,14 @@ NTSTATUS GetPeBaseByEnumPageTable(
                         PDE_LARGE* Pde_l = (PDE_LARGE*)&Pd[Pdi];
                         if (IsGPAPeBase(GET_2M_PFN_PAGE(Pde_l->s.PageFrameNumber), EPTP, PAGE_SIZE_2M))
                         {
-                            MyDbgPrintEx("va=%llx", VA);
+                            MyDbgPrintEx("pe va=%llx", VA);
+                            if (BufferSize >= sizeof(*Buffer))
+                            {
+                                *Buffer = VA;
+                                Buffer++;
+                                BufferSize -= sizeof(*Buffer);
+                                ReturnLength += sizeof(*Buffer);
+                            }
                         }
                         VA += PAGE_SIZE_2M;
                     }
@@ -438,7 +461,14 @@ NTSTATUS GetPeBaseByEnumPageTable(
                 PDPTE_LARGE* Pdpte_l = (PDPTE_LARGE*)&Pdpt[Pdpti];
                 if (IsGPAPeBase(GET_1G_PFN_PAGE(Pdpte_l->s.PageFrameNumber), EPTP, PAGE_SIZE_1G))
                 {
-                    MyDbgPrintEx("va=%llx", VA);
+                    MyDbgPrintEx("pe va=%llx", VA);
+                    if (BufferSize >= sizeof(*Buffer))
+                    {
+                        *Buffer = VA;
+                        Buffer++;
+                        BufferSize -= sizeof(*Buffer);
+                        ReturnLength += sizeof(*Buffer);
+                    }
                 }
                 VA += PAGE_SIZE_1G;
             }

@@ -69,7 +69,7 @@ int TestParsePageTable(HANDLE& Handle, VMInfo& info)
 	if (!ret)
 	{
 		std::cout << "DeviceIoControl error=" << GetLastError() << std::endl;
-		return 0;
+		return FALSE;
 	}
 	std::cout << "cr3=" << std::hex << info.cr3 << ", eptp=" << info.eptp << std::dec << std::endl;
 
@@ -78,12 +78,12 @@ int TestParsePageTable(HANDLE& Handle, VMInfo& info)
 	if (!ret)
 	{
 		std::cout << "DeviceIoControl error=" << GetLastError() << std::endl;
-		return 0;
+		return FALSE;
 	}
 	if (retLength != sizeof(buffer))
 	{
 		std::cout << "read cr3 error, size=" << retLength << std::endl;
-		return 0;
+		return FALSE;
 	}
 	std::cout << "read test: " << std::hex;
 	for (size_t i = 0; i < sizeof(buffer)/sizeof(buffer[0]); i++)
@@ -91,7 +91,7 @@ int TestParsePageTable(HANDLE& Handle, VMInfo& info)
 		std::cout << (int)(buffer[i] & 0xFF) << ' ';
 	}
 	std::cout << std::dec << std::endl;
-	return 1;
+	return TRUE;
 }
 
 int TestEnumKernelMem(const char *target, HANDLE& Handle, VMInfo& info, ProcBasicInfo& proc)
@@ -102,7 +102,7 @@ int TestEnumKernelMem(const char *target, HANDLE& Handle, VMInfo& info, ProcBasi
 	if (!ret)
 	{
 		std::cout << "DeviceIoControl error=" << GetLastError() << std::endl;
-		return 0;
+		return FALSE;
 	}
 	size_t count = retLength / sizeof(ProcBasicInfo);
 	std::cout << "proc count=" << count << std::endl;
@@ -117,10 +117,10 @@ int TestEnumKernelMem(const char *target, HANDLE& Handle, VMInfo& info, ProcBasi
 			proc.pid = it->pid;
 			proc.eprocess = it->eprocess;
 			memcpy(proc.name, it->name, sizeof(proc.name));
-			return 1;
+			return TRUE;
 		}
 	}
-	return 0;
+	return FALSE;
 }
 
 int TestProcVadTree(HANDLE& Handle, ProcBasicInfo& proc, std::vector<ProcVadInfo>& vadList)
@@ -130,39 +130,40 @@ int TestProcVadTree(HANDLE& Handle, ProcBasicInfo& proc, std::vector<ProcVadInfo
 	if (!ret)
 	{
 		std::cout << "DeviceIoControl error=" << GetLastError() << std::endl;
-		return 0;
+		return FALSE;
 	}
 	size_t count = retLength / sizeof(ProcVadInfo);
 	std::cout << "vad count=" << count << std::endl;
 	vadList.resize(count);
 	std::sort(vadList.begin(), vadList.end(), cmp_vad);
 
-	return 1;
+	return TRUE;
 }
 
 int TestProcModuleList(HANDLE& Handle, ProcBasicInfo& proc, std::vector<ProcVadInfo>& vadList)
 {
 	DWORD retLength = 0;
-	for (std::vector<ProcVadInfo>::iterator it = vadList.begin(); it != vadList.end(); it++)
+	std::vector<ProcVadInfo>::iterator it = vadList.begin();
+	if (it == vadList.end())
 	{
-		if (it->isprivate == 1)
-		{
-			continue;
-		}
-		std::cout << std::hex << "startpfn=" << it->startpfn << ", endpfn=" << it->endingpfn << ", protection = " << it->protection << ", vadtype = " << it->vadtype << ", commitsize = " << it->commitsize << std::endl;
-		proc.va = it->startpfn << 12;
-		proc.va2 = it->endingpfn << 12;
-		BOOL ret = DeviceIoControl(Handle, IOCTL_ENUM_USER_MEM_PE_LIST, &proc, sizeof(proc), NULL, 0, &retLength, NULL);
-		if (!ret)
-		{
-			std::cout << "DeviceIoControl error=" << GetLastError() << std::endl;
-			return 0;
-		}
-
+		return FALSE;
 	}
-
-
-	return 1;
+	proc.va = it->startpfn << 12;
+	std::vector<UINT64> PeList(1024);
+	BOOL ret = DeviceIoControl(Handle, IOCTL_ENUM_USER_MEM_PE_LIST, &proc, sizeof(proc), PeList.data(), PeList.capacity() * sizeof(UINT64), &retLength, NULL);
+	if (!ret)
+	{
+		std::cout << "DeviceIoControl error=" << GetLastError() << std::endl;
+		return FALSE;
+	}
+	size_t count = retLength / sizeof(UINT64);
+	std::cout << "pe list count=" << count << std::endl;
+	PeList.resize(count);
+	for (std::vector<UINT64>::iterator it = PeList.begin(); it != PeList.end(); it++)
+	{
+		std::cout << "pe va=" << std::hex << *it << std::endl;
+	}
+	return TRUE;
 }
 
 int main()
@@ -195,19 +196,16 @@ int main()
 		CloseHandle(Handle);
 		return -1;
 	}
+	for (std::vector<ProcVadInfo>::iterator it = vadList.begin(); it != vadList.end(); it++)
+	{
+		std::cout << std::hex << "startpfn=" << it->startpfn << ", endpfn=" << it->endingpfn << ", private=" << it->isprivate << ", protection=" << it->protection << ", vadtype=" << it->vadtype << ", commitsize=" << it->commitsize << std::endl;
+	}
 	if (!TestProcModuleList(Handle, proc, vadList))
 	{
 		CloseHandle(Handle);
 		return -1;
 	}
 
-
-	/*for (std::vector<ProcVadInfo>::iterator it = vadList.begin(); it != vadList.end(); it++)
-	{
-		std::cout << std::hex << "startpfn=" << it->startpfn << ", endpfn=" << it->endingpfn << ", private=" << it->isprivate << ", protection=" << it->protection << ", vadtype=" << it->vadtype << ", commitsize=" << it->commitsize << std::endl;
-	}*/
-	
-	
 
 	/*for (std::vector<ProcVadInfo>::iterator it = vadList.begin(); it != vadList.end(); it++)
 	{
@@ -249,6 +247,7 @@ int main()
 		}
 	}*/
 	
+
 	CloseHandle(Handle);
 	return 0;
 }

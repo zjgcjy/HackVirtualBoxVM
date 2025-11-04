@@ -9,6 +9,7 @@ PDEVICE_OBJECT g_vboxDeviceObject = NULL;
 
 fpMmCopyMemory g_MmCopyMemory = NULL;
 
+const UINT64 g_UserSpaceEnd = 0x00007FFFFFFFFFFF;
 const UINT64 g_KernelSpaceBase = 0xFFFF800000000000;
 const UINT64 g_KernelModulesMappingBase = 0xFFFFF80000000000;   // VmmWinInit_FindNtosScan64
 const UINT64 g_KernelModulesMappingEnd = 0xFFFFF807FFFFFFFF;    // 32G

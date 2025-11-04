@@ -83,6 +83,7 @@ typedef NTSTATUS(*fpMmCopyMemory)(PVOID TargetAddress, MM_COPY_ADDRESS SourceAdd
 
 extern fpMmCopyMemory g_MmCopyMemory;
 
+extern const UINT64 g_UserSpaceEnd;
 extern const UINT64 g_KernelSpaceBase;
 extern const UINT64 g_KernelModulesMappingBase;		// VmmWinInit_FindNtosScan64
 extern const UINT64 g_KernelModulesMappingEnd;		// 32G

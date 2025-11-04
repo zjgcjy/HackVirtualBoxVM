@@ -270,8 +270,9 @@ NTSTATUS GetGuestPeDllList(
 	UINT64 eptp = Input->eptp;
 	UINT64 va = Input->va;
 	UINT64 va2 = Input->va2;
+	UINT64* Buffer = (UINT64*)SystemBuffer;
 
-	NTSTATUS Status = GetPeBaseByEnumPageTable(cr3, eptp, va, va2);
+	NTSTATUS Status = GetPeBaseByEnumPageTable(cr3, eptp, va, va2, Buffer, OutputBufferLength, ReturnLength);
 	if (!NT_SUCCESS(Status))
 	{
 		return Status;
